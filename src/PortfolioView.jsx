@@ -194,7 +194,12 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
               </div>
               {totalDeposited > 0 && (
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                  <span>{overallPlIls >= 0 ? '+' : ''}{((overallPlIls / totalDeposited) * 100).toFixed(2)}% על {formatMoney(totalDeposited)} שהופקדו</span>
+                  <span>
+                     <span dir="ltr">{overallPlIls >= 0 ? '+' : ''}{((overallPlIls / totalDeposited) * 100).toFixed(2)}%</span>
+                     {' על '}
+                     <span dir="ltr">{formatMoney(totalDeposited)}</span>
+                     {' שהופקדו'}
+                  </span>
                   <button
                     onClick={() => { setDepositMode('add'); setIsDepositModalOpen(true); }}
                     style={{ background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '0.4rem', color: 'var(--text-main)', cursor: 'pointer', fontSize: '0.65rem', padding: '0.15rem 0.4rem' }}
