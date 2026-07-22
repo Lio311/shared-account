@@ -1,0 +1,1103 @@
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;800&display=swap');
+
+:root {
+  --bg-main: #f1f5f9;
+  --bg-card: rgba(255, 255, 255, 0.95);
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --expense: #ef4444;
+  --expense-bg: rgba(239, 68, 68, 0.1);
+  --income: #10b981;
+  --income-bg: rgba(16, 185, 129, 0.1);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --nav-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Heebo', sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  direction: rtl;
+  min-height: 100vh;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0, transparent 50%), 
+    radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.05) 0, transparent 50%);
+  background-attachment: fixed;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* =================== App Shell =================== */
+.app-shell {
+  max-width: 800px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  padding: 1.5rem 1rem;
+  padding-bottom: calc(var(--nav-height) + 1.5rem);
+}
+
+/* =================== Bottom Navigation =================== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-height);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 100;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: 'Heebo', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+  position: relative;
+}
+
+.nav-item.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 0 0 4px 4px;
+}
+
+.nav-item:hover {
+  background: none;
+  color: var(--accent);
+}
+
+/* =================== Tab Titles =================== */
+.tab-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 1.5rem;
+  background: -webkit-linear-gradient(45deg, #2563eb, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* =================== Balance Card =================== */
+.balance-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.balance-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.balance-value {
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.balance-card.positive .balance-value {
+  color: var(--income);
+}
+
+.balance-card.negative .balance-value {
+  color: var(--expense);
+}
+
+/* =================== Summary Cards (Home) =================== */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.2rem 1rem;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.summary-card .summary-icon {
+  margin-bottom: 0.5rem;
+}
+
+.expense-card .summary-icon { color: var(--expense); }
+.income-card .summary-icon { color: var(--income); }
+
+.summary-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.summary-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.expense-card .summary-value { color: var(--expense); }
+.income-card .summary-value { color: var(--income); }
+
+.balance-card-full.bg-income {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+}
+.balance-card-full.bg-expense {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+  color: white;
+  border: none;
+}
+.balance-card-full.bg-income .summary-icon,
+.balance-card-full.bg-expense .summary-icon,
+.balance-card-full.bg-income .summary-label,
+.balance-card-full.bg-expense .summary-label,
+.balance-card-full.bg-income .summary-value,
+.balance-card-full.bg-expense .summary-value {
+  color: white;
+}
+
+/* =================== Action Buttons (Home) =================== */
+.action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  border: none;
+  border-radius: 1rem;
+  font-family: 'Heebo', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: white;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.action-btn:active {
+  transform: scale(0.97);
+}
+
+.expense-btn {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.income-btn {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+/* =================== Glass Card =================== */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/* =================== Salary Cards =================== */
+.salaries-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.salary-card {
+  text-align: center;
+}
+
+.salary-card h3 {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+  font-weight: 500;
+}
+
+.salary-card .amount {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--income);
+}
+
+.payslip-link {
+  display: inline-block;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.payslip-link:hover {
+  text-decoration: underline;
+}
+
+/* =================== Charts Tab =================== */
+.chart-card {
+  margin-bottom: 1rem;
+}
+
+.chart-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.chart-container {
+  height: 300px;
+  position: relative;
+  width: 100%;
+}
+
+.pie-container {
+  height: 350px;
+}
+
+/* =================== Transaction Cards =================== */
+.tx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.tx-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  border-right: 6px solid transparent;
+}
+
+.tx-card.expense {
+  border-right-color: var(--expense);
+}
+
+.tx-card.income {
+  border-right-color: var(--income);
+}
+
+.tx-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.tx-card-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.tx-category {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.tx-description {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-amount {
+  font-weight: 800;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tx-amount.expense {
+  color: var(--expense);
+}
+
+.tx-amount.income {
+  color: var(--income);
+}
+
+.tx-card-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tx-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge.expense {
+  background: var(--expense);
+  color: white;
+}
+
+.badge.income {
+  background: var(--income);
+  color: white;
+}
+
+/* =================== Forms =================== */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input, select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+}
+
+select {
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2364748b%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: left 1rem center;
+  background-size: 0.65em auto;
+  padding-left: 2.5rem;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+input[type="file"] {
+  padding: 0.5rem;
+  background: #f8fafc;
+  cursor: pointer;
+  border: 1px dashed #cbd5e1;
+}
+
+input[type="file"]::file-selector-button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  margin-left: 0.75rem;
+  transition: background-color 0.2s;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--accent-hover);
+}
+
+/* DatePicker custom styles - Hebrew RTL */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container input {
+  width: 100%;
+}
+
+.react-datepicker {
+  font-family: 'Heebo', sans-serif !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12) !important;
+  direction: rtl;
+  overflow: hidden;
+}
+
+.react-datepicker__header {
+  background: white !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  padding-top: 0.75rem !important;
+}
+
+.react-datepicker__current-month {
+  font-family: 'Heebo', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 1rem !important;
+  color: var(--text-main) !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.react-datepicker__day-names {
+  direction: rtl;
+}
+
+.react-datepicker__day-name {
+  font-family: 'Heebo', sans-serif !important;
+  color: var(--text-muted) !important;
+  font-weight: 500 !important;
+  font-size: 0.8rem !important;
+  width: 2.2rem !important;
+  line-height: 2.2rem !important;
+}
+
+.react-datepicker__day {
+  font-family: 'Heebo', sans-serif !important;
+  width: 2.2rem !important;
+  line-height: 2.2rem !important;
+  border-radius: 0.5rem !important;
+  font-size: 0.9rem !important;
+  color: var(--text-main) !important;
+  transition: background-color 0.15s !important;
+}
+
+.react-datepicker__day:hover {
+  background: #f1f5f9 !important;
+  border-radius: 0.5rem !important;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background: #1e293b !important;
+  color: white !important;
+  border-radius: 0.5rem !important;
+  font-weight: 700 !important;
+}
+
+.react-datepicker__day--today {
+  font-weight: 700 !important;
+}
+
+.react-datepicker__day--outside-month {
+  color: #cbd5e1 !important;
+}
+
+.react-datepicker__navigation {
+  top: 0.75rem !important;
+}
+
+.react-datepicker__navigation--previous {
+  left: auto !important;
+  right: 0.5rem !important;
+}
+
+.react-datepicker__navigation--next {
+  right: auto !important;
+  left: 0.5rem !important;
+}
+
+.react-datepicker__navigation-icon--previous::before {
+  transform: rotate(45deg) !important;
+}
+
+.react-datepicker__navigation-icon--next::before {
+  transform: rotate(225deg) !important;
+}
+
+.react-datepicker__month-text {
+  font-family: 'Heebo', sans-serif !important;
+  padding: 0.5rem !important;
+  border-radius: 0.5rem !important;
+}
+
+.react-datepicker__month-text--keyboard-selected {
+  background: #1e293b !important;
+  color: white !important;
+}
+
+.react-datepicker-popper {
+  z-index: 300 !important;
+}
+
+button {
+  font-family: 'Heebo', sans-serif;
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+button:hover {
+  background: var(--accent-hover);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* =================== Modal =================== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  width: 100%;
+  max-width: 500px;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.close-btn {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  background: transparent;
+  padding: 0.5rem;
+  color: var(--text-muted);
+}
+.close-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-main);
+}
+
+/* =================== Loading =================== */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =================== Animations =================== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* =================== Desktop =================== */
+@media (min-width: 769px) {
+  .page-content {
+    padding: 2rem;
+    padding-bottom: calc(var(--nav-height) + 2rem);
+  }
+  
+  .tab-title {
+    font-size: 2rem;
+  }
+
+  .summary-value {
+    font-size: 1.8rem;
+  }
+  
+  .chart-container {
+    height: 380px;
+  }
+  
+  .pie-container {
+    height: 420px;
+  }
+}
+
+/* =================== PIN Screen =================== */
+.pin-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 50%, #ede9fe 100%);
+}
+
+.pin-card {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 2.5rem 2rem;
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: hidden;
+}
+
+.pin-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent), #7c3aed);
+}
+
+.pin-logo {
+  width: 120px;
+  margin: 0 auto 1.5rem;
+}
+
+.pin-logo img {
+  width: 100%;
+  height: auto;
+}
+
+.pin-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.pin-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.pin-inputs {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  direction: ltr;
+}
+
+.pin-input {
+  width: 56px !important;
+  height: 56px;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border: 2px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  color: var(--text-main);
+  padding: 0 !important;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  caret-color: var(--accent);
+  -webkit-text-security: disc !important;
+  text-security: disc !important;
+}
+
+.pin-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+  background: white;
+}
+
+.pin-input.pin-filled {
+  border-color: var(--accent);
+  background: white;
+}
+
+.pin-input.pin-error {
+  border-color: var(--expense) !important;
+  animation: shake 0.4s ease;
+}
+
+.pin-show-toggle {
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  gap: 0.3rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.pin-show-toggle:hover {
+  background: #f1f5f9;
+  color: var(--text-main);
+}
+
+.pin-error-msg {
+  background: var(--expense-bg);
+  color: var(--expense);
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* =================== Payslips Tab =================== */
+.filter-segmented {
+  display: flex;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.filter-segmented button {
+  flex: 1;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Heebo', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.filter-segmented button.active {
+  background: white;
+  color: var(--text-main);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.payslips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.payslip-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.payslip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+}
+
+.payslip-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.payslip-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: white;
+}
+
+.user-avatar.ben {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+
+.user-avatar.bat {
+  background: linear-gradient(135deg, #ec4899, #be185d);
+}
+
+.payslip-user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.payslip-name {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.payslip-month {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.payslip-amount {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--income);
+}
+
+.payslip-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
+}
+
+.btn-view-payslip {
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.2s;
+  font-family: 'Heebo', sans-serif;
+}
+
+.btn-view-payslip:hover {
+  background: var(--accent-hover);
+}
+
+.no-payslip-badge {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem;
+}
+
+@media (max-width: 480px) {
+  .nav-item {
+    font-size: 0.52rem;
+    gap: 1px;
+  }
+  .nav-item svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* =================== Toasts =================== */
+.toasts-container {
+  position: fixed;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 90%;
+  max-width: 400px;
+  pointer-events: none;
+}
+
+.toast-card {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  padding: 0.85rem 1.25rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 600;
+}
+
+.toast-card.success {
+  border-right: 6px solid var(--income);
+  color: #065f46;
+  background: rgba(240, 253, 250, 0.95);
+}
+
+.toast-card.error {
+  border-right: 6px solid var(--expense);
+  color: #991b1b;
+  background: rgba(254, 242, 242, 0.95);
+}
+
+/* =================== Custom Dialog Modals =================== */
+.custom-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  padding: 1rem;
+}
+
+.custom-dialog-card {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  width: 100%;
+  max-width: 420px;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  text-align: center;
+  animation: fadeIn 0.2s ease forwards;
+}
+
+.custom-dialog-card h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin-bottom: 0.75rem;
+}
+
+.custom-dialog-card p {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.custom-dialog-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.custom-dialog-buttons button {
+  flex: 1;
+  font-family: 'Heebo', sans-serif;
+  font-weight: 700;
+}
+
+.custom-dialog-buttons .btn-cancel {
+  background: #f1f5f9;
+  color: #475569;
+}
+.custom-dialog-buttons .btn-cancel:hover {
+  background: #e2e8f0;
+}
+
