@@ -139,13 +139,36 @@ export default async function handler(req, res) {
       const { investment_id, symbol, shares, currency, purchase_date, purchase_price_fc } = body;
 
       const rate = await getBoiRate(currency, purchase_date);
-      const purchase_price_ils = parseFloat(purchase_price_fc) * rate * parseFloat(shares);
+      const added_ils = parseFloat(purchase_price_fc) * rate * parseFloat(shares);
+      const added_fc_cost = parseFloat(purchase_price_fc) * parseFloat(shares);
 
-      const result = await client.query(
-        `INSERT INTO portfolio_stocks (investment_id, symbol, shares, currency, purchase_date, purchase_price_fc, purchase_exchange_rate, purchase_price_ils)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [investment_id, symbol.toUpperCase(), shares, currency.toUpperCase(), purchase_date, purchase_price_fc, rate, purchase_price_ils]
+      const existingRes = await client.query(
+        `SELECT id, shares, purchase_price_fc, purchase_price_ils FROM portfolio_stocks WHERE investment_id = $1 AND symbol = $2 AND status = 'active'`,
+        [investment_id, symbol.toUpperCase()]
       );
+
+      let result;
+      if (existingRes.rows.length > 0) {
+        const existing = existingRes.rows[0];
+        const newShares = parseFloat(existing.shares) + parseFloat(shares);
+        const newIls = parseFloat(existing.purchase_price_ils) + added_ils;
+        const newTotalFc = (parseFloat(existing.purchase_price_fc) * parseFloat(existing.shares)) + added_fc_cost;
+        const newAvgFc = newTotalFc / newShares;
+        const newAvgRate = newIls / newTotalFc;
+        
+        result = await client.query(
+          `UPDATE portfolio_stocks 
+           SET shares = $1, purchase_price_fc = $2, purchase_exchange_rate = $3, purchase_price_ils = $4, purchase_date = $5
+           WHERE id = $6 RETURNING *`,
+          [newShares, newAvgFc, newAvgRate, newIls, purchase_date, existing.id]
+        );
+      } else {
+        result = await client.query(
+          `INSERT INTO portfolio_stocks (investment_id, symbol, shares, currency, purchase_date, purchase_price_fc, purchase_exchange_rate, purchase_price_ils)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [investment_id, symbol.toUpperCase(), shares, currency.toUpperCase(), purchase_date, purchase_price_fc, rate, added_ils]
+        );
+      }
 
       const cashSymbol = currency.toUpperCase() === 'ILS' ? 'CASH_ILS' : 'CASH_USD';
       const totalCostFc = parseFloat(shares) * parseFloat(purchase_price_fc);
@@ -159,24 +182,43 @@ export default async function handler(req, res) {
 
     if (req.method === 'PUT') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      const { id, sale_date, sale_price_fc } = body;
+      const { id, sale_date, sale_price_fc, sale_shares } = body;
       
       const stockRes = await client.query('SELECT * FROM portfolio_stocks WHERE id = $1', [id]);
       if (stockRes.rows.length === 0) return res.status(404).send('Not found');
       const stock = stockRes.rows[0];
 
-      const rate = await getBoiRate(stock.currency, sale_date);
-      const sale_price_ils = parseFloat(sale_price_fc) * rate * parseFloat(stock.shares);
+      const sellQty = sale_shares ? parseFloat(sale_shares) : parseFloat(stock.shares);
+      const remainingShares = parseFloat(stock.shares) - sellQty;
 
-      const result = await client.query(
-        `UPDATE portfolio_stocks 
-         SET status = 'sold', sale_date = $1, sale_price_fc = $2, sale_exchange_rate = $3, sale_price_ils = $4
-         WHERE id = $5 RETURNING *`,
-        [sale_date, sale_price_fc, rate, sale_price_ils, id]
-      );
+      const rate = await getBoiRate(stock.currency, sale_date);
+      const sale_price_ils = parseFloat(sale_price_fc) * rate * sellQty;
+
+      const avgCostIls = parseFloat(stock.purchase_price_ils) / parseFloat(stock.shares);
+      const realizedCostIls = avgCostIls * sellQty;
+
+      let result;
+      if (remainingShares <= 0.0001) {
+        result = await client.query(
+          `UPDATE portfolio_stocks 
+           SET status = 'sold', sale_date = $1, sale_price_fc = $2, sale_exchange_rate = $3, sale_price_ils = $4
+           WHERE id = $5 RETURNING *`,
+          [sale_date, sale_price_fc, rate, sale_price_ils, id]
+        );
+      } else {
+        await client.query(
+          `UPDATE portfolio_stocks SET shares = $1, purchase_price_ils = $2 WHERE id = $3`,
+          [remainingShares, parseFloat(stock.purchase_price_ils) - realizedCostIls, id]
+        );
+        result = await client.query(
+          `INSERT INTO portfolio_stocks (investment_id, symbol, name, shares, currency, purchase_date, purchase_price_fc, purchase_exchange_rate, purchase_price_ils, status, sale_date, sale_price_fc, sale_exchange_rate, sale_price_ils)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sold', $10, $11, $12, $13) RETURNING *`,
+          [stock.investment_id, stock.symbol, stock.name, sellQty, stock.currency, stock.purchase_date, stock.purchase_price_fc, stock.purchase_exchange_rate, realizedCostIls, sale_date, sale_price_fc, rate, sale_price_ils]
+        );
+      }
 
       const cashSymbol = stock.currency.toUpperCase() === 'ILS' ? 'CASH_ILS' : 'CASH_USD';
-      const totalGainFc = parseFloat(stock.shares) * parseFloat(sale_price_fc);
+      const totalGainFc = sellQty * parseFloat(sale_price_fc);
       await client.query(
         `UPDATE portfolio_stocks SET shares = shares + $1 WHERE investment_id = $2 AND symbol = $3`,
         [totalGainFc, stock.investment_id, cashSymbol]
