@@ -30,6 +30,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
   // Sell Form
   const [sellPrice, setSellPrice] = useState('');
+  const [sellShares, setSellShares] = useState('');
   const [sellDate, setSellDate] = useState(new Date());
 
   const handleDeposit = async (e) => {
@@ -128,6 +129,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
         body: JSON.stringify({
           id: selectedStock.id,
           sale_price_fc: sellPrice,
+          sale_shares: sellShares || selectedStock.shares,
           sale_date: format(sellDate, 'yyyy-MM-dd')
         })
       });
@@ -135,6 +137,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
         showToast("מניה נמכרה בהצלחה!");
         setIsSellModalOpen(false);
         setSellPrice('');
+        setSellShares('');
         fetchPortfolio();
       } else {
         showToast("שגיאה במכירה", "error");
@@ -399,6 +402,10 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
               <h2>מכירת {selectedStock.symbol}</h2>
             </div>
             <form onSubmit={handleSell} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label>כמות למכירה (מתוך {selectedStock.shares})</label>
+                <input type="number" step="any" max={selectedStock.shares} value={sellShares} onChange={e => setSellShares(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} placeholder={selectedStock.shares} />
+              </div>
               <div>
                 <label>מחיר מכירה במטבע ({selectedStock.currency})</label>
                 <input type="number" step="any" value={sellPrice} onChange={e => setSellPrice(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} />
