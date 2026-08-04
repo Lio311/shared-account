@@ -349,13 +349,26 @@ export default function App() {
   };
 
   useEffect(() => {
+    const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return response;
+      } catch (err) {
+        clearTimeout(id);
+        throw err;
+      }
+    };
+
     async function fetchData() {
       try {
         const [txRes, salRes, projRes, invRes] = await Promise.all([
-          fetch('/api/transactions'),
-          fetch('/api/salaries'),
-          fetch('/api/projects'),
-          fetch('/api/investments')
+          fetchWithTimeout('/api/transactions'),
+          fetchWithTimeout('/api/salaries'),
+          fetchWithTimeout('/api/projects'),
+          fetchWithTimeout('/api/investments')
         ]);
         if (txRes.ok) setTransactions(await txRes.json());
         if (salRes.ok) setSalaries(await salRes.json());

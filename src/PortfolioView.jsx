@@ -110,7 +110,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       }
     } catch (error) {
       console.error(error);
-      showToast('שגיאה בהגדרת התראות (נסה להוסיף את האתר למסך הבית)', 'error');
+      showToast(`שגיאה בהגדרת התראות: ${error.message || 'אנא בדוק שהדפדפן והמכשיר מאפשרים התראות'}`, 'error');
     }
   };
 
@@ -256,7 +256,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   };
 
   const cashStocks = stocks.filter(s => s.status === 'active' && (s.symbol === 'CASH_ILS' || s.symbol === 'CASH_USD'));
-  const activeStocks = stocks.filter(s => s.status === 'active' && s.symbol !== 'CASH_ILS' && s.symbol !== 'CASH_USD');
+  const activeStocks = stocks.filter(s => s.status === 'active' && s.symbol !== 'CASH_ILS' && s.symbol !== 'CASH_USD' && s.shares > 0 && parseFloat(s.current_value_ils || 0) > 0);
   const totalActiveValueIls = activeStocks.reduce((sum, s) => sum + parseFloat(s.current_value_ils || 0), 0);
   const filteredActiveStocks = activeStocks
     .filter(stock => stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || stock.name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -368,6 +368,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       legend: { display: false },
       tooltip: {
         callbacks: {
+          title: () => null,
           label: function(context) {
              let label = '';
              if (context.parsed !== null) {
@@ -483,7 +484,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 <button
                   onClick={() => setAllocationView('stock')}
                   style={{
-                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold',
+                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold',
                     background: allocationView === 'stock' ? 'white' : 'transparent',
                     color: allocationView === 'stock' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: allocationView === 'stock' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
@@ -494,7 +495,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 <button
                   onClick={() => setAllocationView('sector')}
                   style={{
-                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold',
+                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold',
                     background: allocationView === 'sector' ? 'white' : 'transparent',
                     color: allocationView === 'sector' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: allocationView === 'sector' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
@@ -513,7 +514,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 <div style={{ 
                   width: '100%', 
                   display: 'grid', 
-                  gridTemplateColumns: 'repeat(3, 1fr)', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', 
                   columnGap: '0.25rem',
                   rowGap: '0.75rem',
                   direction: 'rtl'
