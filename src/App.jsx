@@ -304,10 +304,45 @@ export default function App() {
     'הפרשות מיוחדות', 'כללי'
   ];
 
+  const updatePortfoliosBackground = async (investmentsData) => {
+    const portfolios = investmentsData.filter(inv => inv.type === 'חשבון מסחר');
+    if (portfolios.length > 0) {
+      const results = await Promise.all(portfolios.map(async p => {
+        try {
+          const pRes = await fetch(`/api/portfolio?investment_id=${p.id}`);
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            return { id: p.id, value: pData.portfolioValue };
+          }
+        } catch (e) {
+          console.error("Failed to update portfolio", p.id, e);
+        }
+        return null;
+      }));
+
+      setInvestments(prev => {
+        let changed = false;
+        const updated = prev.map(inv => {
+          const update = results.find(r => r && r.id === inv.id);
+          if (update && parseFloat(inv.current_value || 0) !== update.value) {
+            changed = true;
+            return { ...inv, current_value: update.value.toString() };
+          }
+          return inv;
+        });
+        return changed ? updated : prev;
+      });
+    }
+  };
+
   const fetchInvestments = async () => {
     try {
       const res = await fetch('/api/investments');
-      if (res.ok) setInvestments(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setInvestments(data);
+        updatePortfoliosBackground(data);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -325,7 +360,11 @@ export default function App() {
         if (txRes.ok) setTransactions(await txRes.json());
         if (salRes.ok) setSalaries(await salRes.json());
         if (projRes.ok) setProjects(await projRes.json());
-        if (invRes.ok) setInvestments(await invRes.json());
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          setInvestments(invData);
+          updatePortfoliosBackground(invData);
+        }
       } catch (err) {
         console.error("Error fetching data:", err);
       } finally {
