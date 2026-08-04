@@ -7,8 +7,8 @@ const connectionString = process.env.DATABASE_URL;
 
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-  process.env.VITE_VAPID_PUBLIC_KEY || 'BHQ2jS5SVlOHPhpA7ZVMTT0VjMc9HII94ck8j2eGXQyF9SEcN8RGSEMECDELcGCgGUm5-s-ABaJZId6x00UMw04',
-  process.env.VAPID_PRIVATE_KEY || 'Wrlq3IZzLTKwc6Ft2BJODqVYQxNRgTWR4RHNwgtQ0X4'
+  process.env.VITE_VAPID_PUBLIC_KEY || 'BME9LOdF8qbwYFriwt6h70i0vzcv5YjCbJy0_RvE4OIDt2CE32SX-8hoIjLVFl_LmTPH9yOitw-S8Hz0gkZqa-s',
+  process.env.VAPID_PRIVATE_KEY || 'LDCYXYvZzGn4y8I3N1w63GZ_JSQAPbXf9ZHWe1r1PV4'
 );
 
 async function getBoiRate(currency) {
