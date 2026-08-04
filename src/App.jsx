@@ -17,7 +17,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
-import { PlusCircle, Receipt, X, Home, BarChart3, History, Wallet, TrendingDown, Lock, Eye, EyeOff, FileText, Pencil, Trash2, ChevronLeft, ChevronRight, ClipboardList, Briefcase, Coins } from 'lucide-react';
+import { PlusCircle, Receipt, X, Home, BarChart3, History, Wallet, TrendingDown, Lock, Eye, EyeOff, FileText, Pencil, Trash2, ChevronLeft, ChevronRight, ClipboardList, Briefcase, Coins, Bell } from 'lucide-react';
 import PortfolioView from './PortfolioView';
 
 ChartJS.register(
@@ -1014,10 +1014,65 @@ export default function App() {
     return { monthExpenses, monthIncome, totalBalance };
   }, [transactions]);
 
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const handleSubscribePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      showToast('הדפדפן או המכשיר שלך לא תומכים בהתראות דחיפה', 'error');
+      return;
+    }
+    try {
+      // Must request permission BEFORE any other await to preserve user gesture in iOS Safari
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        showToast('יש לאשר קבלת התראות בדפדפן', 'error');
+        return;
+      }
+      
+      const registration = await navigator.serviceWorker.register('/push-sw.js');
+      const vapidRes = await fetch('/api/vapid-public-key');
+      const { publicKey } = await vapidRes.json();
+      const convertedVapidKey = urlBase64ToUint8Array(publicKey);
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+      const res = await fetch('/api/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+      if (res.ok) {
+        showToast('נרשמת בהצלחה לקבלת התראות יומיות!');
+      } else {
+        const errText = await res.text();
+        showToast(`שגיאה בהרשמה: ${errText}`, 'error');
+      }
+    } catch (error) {
+      console.error(error);
+      showToast(`שגיאה בהגדרת התראות: ${error.message || 'אנא בדוק שהדפדפן והמכשיר מאפשרים התראות'}`, 'error');
+    }
+  };
+
   // =================== RENDER ===================
   const renderHome = () => (
     <div className="home-tab fade-in">
-      <h2 className="tab-title">ניהול חשבון משותף</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+        <h2 className="tab-title" style={{ margin: 0 }}>ניהול חשבון משותף</h2>
+        <button onClick={handleSubscribePush} className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+           <Bell size={18} />
+           <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>התראות</span>
+        </button>
+      </div>
       
       {/* Monthly summary cards */}
       <div className="summary-grid">

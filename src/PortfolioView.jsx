@@ -66,53 +66,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const [sellShares, setSellShares] = useState('');
   const [sellDate, setSellDate] = useState(new Date());
 
-  const urlBase64ToUint8Array = (base64String) => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  };
 
-  const handleSubscribePush = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      showToast('הדפדפן או המכשיר שלך לא תומכים בהתראות דחיפה', 'error');
-      return;
-    }
-    try {
-      // Must request permission BEFORE any other await to preserve user gesture in iOS Safari
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        showToast('יש לאשר קבלת התראות בדפדפן', 'error');
-        return;
-      }
-      
-      const registration = await navigator.serviceWorker.register('/push-sw.js');
-      const vapidRes = await fetch('/api/vapid-public-key');
-      const { publicKey } = await vapidRes.json();
-      const convertedVapidKey = urlBase64ToUint8Array(publicKey);
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey
-      });
-      const res = await fetch('/api/push-subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription, investment_id: investmentId })
-      });
-      if (res.ok) {
-        showToast('נרשמת בהצלחה לקבלת התראות יומיות!');
-      } else {
-        showToast('שגיאה בהרשמה להתראות', 'error');
-      }
-    } catch (error) {
-      console.error(error);
-      showToast(`שגיאה בהגדרת התראות: ${error.message || 'אנא בדוק שהדפדפן והמכשיר מאפשרים התראות'}`, 'error');
-    }
-  };
 
   const handleDeposit = async (e) => {
     e.preventDefault();
@@ -395,10 +349,6 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
             <ArrowRight size={20} />
          </button>
          <h1 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--text-main)' }}>{investmentName}</h1>
-         <button onClick={handleSubscribePush} className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-            <Bell size={18} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>התראות</span>
-         </button>
       </div>
 
       {/* Summary Card */}
