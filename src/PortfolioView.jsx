@@ -295,12 +295,12 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   }}
                >
                   <option value="default">ברירת מחדל</option>
-                  <option value="pct_high">% מהתיק — מהגבוה לנמוך</option>
-                  <option value="pct_low">% מהתיק — מהנמוך לגבוה</option>
-                  <option value="ils_high">₪ שווי — מהגבוה לנמוך</option>
-                  <option value="ils_low">₪ שווי — מהנמוך לגבוה</option>
-                  <option value="return_high">תשואה — מהגבוהה לנמוכה</option>
-                  <option value="return_low">תשואה — מהנמוכה לגבוהה</option>
+                  <option value="pct_high">% מההגבוה לנמוך</option>
+                  <option value="pct_low">% מהנמוך לגבוה</option>
+                  <option value="ils_high">₪ מההגבוה לנמוך</option>
+                  <option value="ils_low">₪ מהנמוך לגבוה</option>
+                  <option value="return_high">התשואה הגבוהה ביותר</option>
+                  <option value="return_low">התשואה הנמוכה ביותר</option>
                </select>
             </div>
          </div>
