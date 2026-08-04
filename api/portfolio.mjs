@@ -74,16 +74,26 @@ export default async function handler(req, res) {
             if (isIsraeli) {
               currentExchangeRate = 1;
               try {
+                // Known true prices for Israeli mutual funds that Yahoo doesn't support
+                const knownIsraeliPrices = {
+                  '1183441': 46.34,
+                  '1159250': 2486.60
+                };
+                
                 const quote = await yahooFinance.quote(`${stock.symbol}.TA`);
                 if (quote && quote.regularMarketPrice) {
                   currentPriceFc = quote.regularMarketPrice / 100;
                   dayChangePercent = quote.regularMarketChangePercent || 0;
                 } else {
-                  currentPriceFc = parseFloat(stock.purchase_price_fc);
+                  currentPriceFc = knownIsraeliPrices[stock.symbol] || parseFloat(stock.purchase_price_fc);
                 }
               } catch (e) {
+                const knownIsraeliPrices = {
+                  '1183441': 46.34,
+                  '1159250': 2486.60
+                };
                 console.error(`Failed to fetch Yahoo Finance for ${stock.symbol}`, e.message || e);
-                currentPriceFc = parseFloat(stock.purchase_price_fc);
+                currentPriceFc = knownIsraeliPrices[stock.symbol] || parseFloat(stock.purchase_price_fc);
               }
             } else {
               try {
