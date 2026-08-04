@@ -324,8 +324,8 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       'CASH_ILS': 'מזומן', 'CASH_USD': 'מזומן',
       'LMT': 'תעופה',
       'SCHD': 'דיבידנדים',
-      'WKEY': 'קוונטי', 'LAES': 'קוונטי', 'GLXY': 'קוונטי', 'IBM': 'קוונטי',
-      'SOLZ': 'קריפטו', 'IBIT': 'קריפטו', 'ETHA': 'קריפטו', 'IREN': 'קריפטו',
+      'WKEY': 'קוונטי', 'LAES': 'קוונטי', 'IBM': 'קוונטי',
+      'SOLZ': 'קריפטו', 'IBIT': 'קריפטו', 'ETHA': 'קריפטו', 'IREN': 'קריפטו', 'GLXY': 'קריפטו',
       'DELL': 'חומרה',
     };
     return sectors[symbol] || 'אחר';
