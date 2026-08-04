@@ -1046,10 +1046,20 @@ export default function App() {
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey
       });
+      
+      const subJson = subscription.toJSON ? subscription.toJSON() : {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.getKey ? btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('p256dh')))) : '',
+          auth: subscription.getKey ? btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('auth')))) : ''
+        }
+      };
+      console.log("Subscription payload to send:", subJson);
+
       const res = await fetch('/api/push-subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription)
+        body: JSON.stringify(subJson)
       });
       if (res.ok) {
         showToast('נרשמת בהצלחה לקבלת התראות יומיות!');

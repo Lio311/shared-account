@@ -10,7 +10,12 @@ export default async function handler(req, res) {
   const subscription = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
   if (!subscription || !subscription.endpoint) {
-    return res.status(400).json({ error: 'Invalid subscription object' });
+    console.error('Invalid subscription received. req.body type:', typeof req.body, 'req.body:', req.body);
+    return res.status(400).json({ 
+      error: 'Invalid subscription object',
+      receivedBody: req.body,
+      typeOfBody: typeof req.body
+    });
   }
 
   const client = new Client({ connectionString });
