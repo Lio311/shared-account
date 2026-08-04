@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     const stocks = result.rows;
     
     // Fetch total deposited
-    const invResult = await client.query("SELECT total_deposited FROM investments LIMIT 1");
+    const invResult = await client.query("SELECT id, total_deposited FROM investments LIMIT 1");
     const totalDeposited = parseFloat(invResult.rows[0]?.total_deposited || 0);
 
     let totalCurrentValueIls = 0;
@@ -115,6 +115,26 @@ export default async function handler(req, res) {
     
     const dailyPlIls = totalCurrentValueIls - totalPreviousValueIls;
     const dailyPlPercent = totalPreviousValueIls > 0 ? (dailyPlIls / totalPreviousValueIls) * 100 : 0;
+
+    // Save snapshot
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+        id SERIAL PRIMARY KEY,
+        investment_id INTEGER REFERENCES investments(id) ON DELETE CASCADE,
+        total_value_ils NUMERIC NOT NULL,
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        UNIQUE(investment_id, date)
+      )
+    `);
+
+    // Assume investment_id = 1 for now, or fetch from invResult if there's an active one. We use the first one from invResult (which should be 1).
+    const investmentId = invResult.rows[0]?.id || 1;
+    await client.query(`
+      INSERT INTO portfolio_snapshots (investment_id, total_value_ils, date) 
+      VALUES ($1, $2, CURRENT_DATE) 
+      ON CONFLICT (investment_id, date) 
+      DO UPDATE SET total_value_ils = EXCLUDED.total_value_ils
+    `, [investmentId, totalCurrentValueIls]);
 
     const formatMoney = (val) => {
       const num = parseFloat(val || 0);

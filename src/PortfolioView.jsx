@@ -1,8 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, DollarSign, Activity, Percent, Trash2, ArrowRight, ArrowUpDown, Bell } from 'lucide-react';
+import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, DollarSign, Activity, Percent, Trash2, ArrowRight, ArrowUpDown, Bell, PieChart, LineChart, Wallet } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
+
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  Filler
+} from 'chart.js';
+import { Line, Doughnut } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+  Filler
+);
 
 export default function PortfolioView({ investmentId, investmentName, onBack, showToast }) {
   const [stocks, setStocks] = useState([]);
@@ -10,6 +36,11 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const [totalDeposited, setTotalDeposited] = useState(0);
   const [overallPlIls, setOverallPlIls] = useState(0);
   const [loading, setLoading] = useState(true);
+  
+  // Tabs & History
+  const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio', 'history', 'allocation'
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   
   // Modals
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
@@ -118,9 +149,33 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     }
   }, [investmentId, showToast]);
 
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/portfolio-history?investment_id=${investmentId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryData(data);
+      } else {
+        showToast("שגיאה במשיכת היסטוריה", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("שגיאת רשת בהיסטוריה", "error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [investmentId, showToast]);
+
   useEffect(() => {
     fetchPortfolio();
   }, [fetchPortfolio]);
+
+  useEffect(() => {
+    if (activeTab === 'history' && historyData.length === 0) {
+      fetchHistory();
+    }
+  }, [activeTab, fetchHistory, historyData.length]);
 
   const handleBuy = async (e) => {
     e.preventDefault();
@@ -226,6 +281,70 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     return `${num < 0 ? '-' : ''}${sym}${formatted}`;
   };
 
+  // Charts Setup
+  const historyChartData = {
+    labels: historyData.map(d => format(new Date(d.date), 'dd/MM/yyyy')),
+    datasets: [
+      {
+        label: 'שווי תיק (₪)',
+        data: historyData.map(d => parseFloat(d.total_value_ils)),
+        borderColor: 'rgb(59, 130, 246)',
+        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+        tension: 0.3,
+        fill: true,
+      }
+    ]
+  };
+
+  const historyChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      title: { display: false }
+    },
+    scales: {
+      y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      x: { ticks: { color: '#9ca3af' }, grid: { display: false } }
+    }
+  };
+
+  const allocationLabels = [...cashStocks.map(s => s.symbol === 'CASH_ILS' ? 'מזומן ₪' : 'מזומן $'), ...activeStocks.map(s => s.symbol)];
+  const allocationData = [...cashStocks.map(s => s.current_value_ils), ...activeStocks.map(s => s.current_value_ils)];
+  const pieColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f43f5e', '#6366f1', '#64748b', '#84cc16'];
+
+  const allocationChartData = {
+    labels: allocationLabels,
+    datasets: [{
+      data: allocationData,
+      backgroundColor: pieColors.slice(0, Math.max(allocationData.length, pieColors.length)),
+      borderWidth: 0,
+      hoverOffset: 4
+    }]
+  };
+  
+  const allocationChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { color: '#e5e7eb', padding: 20, font: { family: 'Rubik, sans-serif' } } },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+             let label = context.label || '';
+             if (label) { label += ': '; }
+             if (context.parsed !== null) {
+                label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'ILS' }).format(context.parsed);
+                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                const percentage = ((context.parsed * 100) / total).toFixed(1) + '%';
+                label += ` (${percentage})`;
+             }
+             return label;
+          }
+        }
+      }
+    },
+    cutout: '65%'
+  };
+
   if (loading && stocks.length === 0) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-main)' }}>טוען נתונים...</div>;
 
   return (
@@ -286,152 +405,201 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
         קניית מניה חדשה
       </button>
 
-      {/* Cash Balances */}
-      {cashStocks.length > 0 && (
-         <div>
-            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1rem' }}>יתרות מזומן</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-               {cashStocks.map(stock => (
-                  <div key={stock.id} className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: stock.symbol === 'CASH_USD' ? '4px solid #10b981' : '4px solid #3b82f6' }}>
-                     <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                        {stock.symbol === 'CASH_ILS' ? 'שקלים (ILS)' : 'דולרים (USD)'}
-                     </div>
-                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
-                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.symbol === 'CASH_ILS' ? 'ILS' : 'USD' }).format(stock.shares)}
-                     </div>
-                     {stock.symbol === 'CASH_USD' && (
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                           ≈ {formatMoney(stock.current_value_ils)}
-                        </div>
-                     )}
-                  </div>
-               ))}
-            </div>
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.25rem', borderRadius: '0.75rem', marginBottom: '0.5rem' }}>
+        <button 
+          onClick={() => setActiveTab('portfolio')} 
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'portfolio' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'portfolio' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          <Wallet size={16} /> התיק
+        </button>
+        <button 
+          onClick={() => setActiveTab('history')} 
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'history' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'history' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          <LineChart size={16} /> מגמה
+        </button>
+        <button 
+          onClick={() => setActiveTab('allocation')} 
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'allocation' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'allocation' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          <PieChart size={16} /> פיזור
+        </button>
+      </div>
+
+      {activeTab === 'history' && (
+         <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1.5rem' }}>היסטוריית שווי התיק</h2>
+            {historyLoading ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>טוען נתונים...</div>
+            ) : historyData.length > 0 ? (
+              <Line options={historyChartOptions} data={historyChartData} />
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>תהיה היסטוריה להציג החל ממחר.</div>
+            )}
          </div>
       )}
 
-      {/* Active Stocks */}
-      <div>
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>החזקות פעילות ({activeStocks.length})</h2>
-            <input 
-               type="text" 
-               placeholder="חיפוש לפי טיקר או שם חברה..." 
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
-               className="form-input"
-            />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-               <ArrowUpDown size={16} color="var(--text-muted)" />
-               <select
-                  value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value)}
-                  style={{
-                     flex: 1,
-                     padding: '0.6rem 0.75rem',
-                     borderRadius: '0.75rem',
-                     border: '1px solid rgba(255,255,255,0.1)',
-                     background: 'rgba(255,255,255,0.05)',
-                     color: 'var(--text-main)',
-                     fontSize: '0.875rem',
-                     cursor: 'pointer',
-                     appearance: 'none',
-                     WebkitAppearance: 'none',
-                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
-                     backgroundRepeat: 'no-repeat',
-                     backgroundPosition: 'left 0.75rem center',
-                     paddingLeft: '2rem'
-                  }}
-               >
-                  <option value="default">ברירת מחדל</option>
-                  <option value="pct_high">% מההגבוה לנמוך</option>
-                  <option value="pct_low">% מהנמוך לגבוה</option>
-                  <option value="ils_high">₪ מההגבוה לנמוך</option>
-                  <option value="ils_low">₪ מהנמוך לגבוה</option>
-                  <option value="return_high">התשואה הגבוהה ביותר</option>
-                  <option value="return_low">התשואה הנמוכה ביותר</option>
-               </select>
-            </div>
+      {activeTab === 'allocation' && (
+         <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1.5rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
+            {allocationData.length > 0 ? (
+              <div style={{ width: '100%', maxWidth: '300px' }}>
+                <Doughnut options={allocationChartOptions} data={allocationChartData} />
+              </div>
+            ) : (
+               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>אין נכסים פעילים בתיק.</div>
+            )}
          </div>
-         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {filteredActiveStocks.map(stock => (
-               <div key={stock.id} className="glass-card" style={{ padding: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                     <div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol}</div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{stock.name}</div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{parseFloat(stock.shares)} מניות</div>
-                     </div>
-                     <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
-                           {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.currency }).format(stock.current_price_fc)}
+      )}
+
+      {activeTab === 'portfolio' && (
+         <>
+            {/* Cash Balances */}
+            {cashStocks.length > 0 && (
+               <div>
+                  <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1rem' }}>יתרות מזומן</h2>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                     {cashStocks.map(stock => (
+                        <div key={stock.id} className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: stock.symbol === 'CASH_USD' ? '4px solid #10b981' : '4px solid #3b82f6' }}>
+                           <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                              {stock.symbol === 'CASH_ILS' ? 'שקלים (ILS)' : 'דולרים (USD)'}
+                           </div>
+                           <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
+                              {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.symbol === 'CASH_ILS' ? 'ILS' : 'USD' }).format(stock.shares)}
+                           </div>
+                           {stock.symbol === 'CASH_USD' && (
+                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                 ≈ {formatMoney(stock.current_value_ils)}
+                              </div>
+                           )}
                         </div>
-                        <div style={{ fontSize: '0.875rem', fontWeight: 'bold', color: stock.day_change_percent >= 0 ? 'var(--income)' : 'var(--expense)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem' }} dir="ltr">
-                           {stock.day_change_percent >= 0 ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
-                           {parseFloat(stock.day_change_percent).toFixed(2)}%
-                        </div>
-                     </div>
-                  </div>
-                  
-                  <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                     <div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שווי אחזקה (₪)</div>
-                        <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">{formatMoney(stock.current_value_ils)}</div>
-                     </div>
-                     <div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>רווח פתוח</div>
-                        <div style={{ fontWeight: 'bold', color: stock.unrealized_pl_fc >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
-                           {stock.unrealized_pl_fc >= 0 ? '+' : ''}{formatMoney(stock.unrealized_pl_fc, stock.currency)}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: stock.unrealized_pl_percent >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
-                           ({stock.unrealized_pl_percent >= 0 ? '+' : ''}{parseFloat(stock.unrealized_pl_percent).toFixed(2)}%)
-                        </div>
-                     </div>
-                     <button 
-                        onClick={() => { setSelectedStock(stock); setIsSellModalOpen(true); }}
-                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.4rem 1rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-                     >
-                        מכירה
-                     </button>
+                     ))}
                   </div>
                </div>
-            ))}
-            {filteredActiveStocks.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>לא נמצאו החזקות פעילות שמתאימות לחיפוש.</div>}
-         </div>
-      </div>
+            )}
 
-      {/* Sold Stocks */}
-      {soldStocks.length > 0 && (
-         <div style={{ marginTop: '1rem' }}>
-            <div 
-               onClick={() => setIsSoldStocksOpen(!isSoldStocksOpen)} 
-               style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.5rem', marginBottom: '1rem' }}
-            >
-               {isSoldStocksOpen ? <ChevronDown size={20} color="var(--text-main)" /> : <ChevronRight size={20} color="var(--text-main)" />}
-               <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>היסטוריית עסקאות (מניות שנמכרו)</h2>
-            </div>
-            {isSoldStocksOpen && (
+            {/* Active Stocks */}
+            <div>
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1rem' }}>
+                  <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>החזקות פעילות ({activeStocks.length})</h2>
+                  <input 
+                     type="text" 
+                     placeholder="חיפוש לפי טיקר או שם חברה..." 
+                     value={searchTerm}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                     className="form-input"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                     <ArrowUpDown size={16} color="var(--text-muted)" />
+                     <select
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value)}
+                        style={{
+                           flex: 1,
+                           padding: '0.6rem 0.75rem',
+                           borderRadius: '0.75rem',
+                           border: '1px solid rgba(255,255,255,0.1)',
+                           background: 'rgba(255,255,255,0.05)',
+                           color: 'var(--text-main)',
+                           fontSize: '0.875rem',
+                           cursor: 'pointer',
+                           appearance: 'none',
+                           WebkitAppearance: 'none',
+                           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                           backgroundRepeat: 'no-repeat',
+                           backgroundPosition: 'left 0.75rem center',
+                           paddingLeft: '2rem'
+                        }}
+                     >
+                        <option value="default">ברירת מחדל</option>
+                        <option value="pct_high">% מההגבוה לנמוך</option>
+                        <option value="pct_low">% מהנמוך לגבוה</option>
+                        <option value="ils_high">₪ מההגבוה לנמוך</option>
+                        <option value="ils_low">₪ מהנמוך לגבוה</option>
+                        <option value="return_high">התשואה הגבוהה ביותר</option>
+                        <option value="return_low">התשואה הנמוכה ביותר</option>
+                     </select>
+                  </div>
+               </div>
                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {soldStocks.map(stock => (
-                     <div key={stock.id} className="glass-card" style={{ padding: '1rem', opacity: 0.8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {filteredActiveStocks.map(stock => (
+                     <div key={stock.id} className="glass-card" style={{ padding: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                            <div>
-                              <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol.replace('_SOLD', '')}</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{stock.name}</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>נמכר ב-{format(new Date(stock.sale_date), 'dd/MM/yyyy')}</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol}</div>
+                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{stock.name}</div>
+                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{parseFloat(stock.shares)} מניות</div>
                            </div>
                            <div style={{ textAlign: 'left' }}>
-                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>רווח ממומש</div>
-                              <div style={{ fontWeight: 'bold', color: stock.realized_pl_ils >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
-                                 {stock.realized_pl_ils >= 0 ? '+' : ''}{formatMoney(stock.realized_pl_ils)}
+                              <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
+                                 {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.currency }).format(stock.current_price_fc)}
+                              </div>
+                              <div style={{ fontSize: '0.875rem', fontWeight: 'bold', color: stock.day_change_percent >= 0 ? 'var(--income)' : 'var(--expense)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem' }} dir="ltr">
+                                 {stock.day_change_percent >= 0 ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
+                                 {parseFloat(stock.day_change_percent).toFixed(2)}%
                               </div>
                            </div>
                         </div>
+                        
+                        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                           <div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שווי אחזקה (₪)</div>
+                              <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">{formatMoney(stock.current_value_ils)}</div>
+                           </div>
+                           <div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>רווח פתוח</div>
+                              <div style={{ fontWeight: 'bold', color: stock.unrealized_pl_fc >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
+                                 {stock.unrealized_pl_fc >= 0 ? '+' : ''}{formatMoney(stock.unrealized_pl_fc, stock.currency)}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: stock.unrealized_pl_percent >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
+                                 ({stock.unrealized_pl_percent >= 0 ? '+' : ''}{parseFloat(stock.unrealized_pl_percent).toFixed(2)}%)
+                              </div>
+                           </div>
+                           <button 
+                              onClick={() => { setSelectedStock(stock); setIsSellModalOpen(true); }}
+                              style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.4rem 1rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                           >
+                              מכירה
+                           </button>
+                        </div>
                      </div>
                   ))}
+                  {filteredActiveStocks.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>לא נמצאו החזקות פעילות שמתאימות לחיפוש.</div>}
+               </div>
+            </div>
+
+            {/* Sold Stocks */}
+            {soldStocks.length > 0 && (
+               <div style={{ marginTop: '1rem' }}>
+                  <div 
+                     onClick={() => setIsSoldStocksOpen(!isSoldStocksOpen)} 
+                     style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.5rem', marginBottom: '1rem' }}
+                  >
+                     {isSoldStocksOpen ? <ChevronDown size={20} color="var(--text-main)" /> : <ChevronRight size={20} color="var(--text-main)" />}
+                     <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>היסטוריית עסקאות (מניות שנמכרו)</h2>
+                  </div>
+                  {isSoldStocksOpen && (
+                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {soldStocks.map(stock => (
+                           <div key={stock.id} className="glass-card" style={{ padding: '1rem', opacity: 0.8 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                 <div>
+                                    <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol.replace('_SOLD', '')}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{stock.name}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>נמכר ב-{format(new Date(stock.sale_date), 'dd/MM/yyyy')}</div>
+                                 </div>
+                                 <div style={{ textAlign: 'left' }}>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>רווח ממומש</div>
+                                    <div style={{ fontWeight: 'bold', color: stock.realized_pl_ils >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
+                                       {stock.realized_pl_ils >= 0 ? '+' : ''}{formatMoney(stock.realized_pl_ils)}
+                                    </div>
+                                 </div>
+                              </div>
+                           </div>
+                        ))}
+                     </div>
+                  )}
                </div>
             )}
-         </div>
+         </>
       )}
 
       {/* Modals */}
