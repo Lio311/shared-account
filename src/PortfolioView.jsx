@@ -471,7 +471,6 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
       {activeTab === 'allocation' && (
          <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, marginBottom: '1.25rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
             <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%', marginBottom: '1.5rem', direction: 'rtl' }}>
               <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0,0,0,0.05)', padding: '0.25rem', borderRadius: '0.5rem' }}>
                 <button
@@ -498,6 +497,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 </button>
               </div>
             </div>
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, marginBottom: '1.25rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
             {allocationData.length > 0 ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ width: '100%', maxWidth: '300px' }}>
