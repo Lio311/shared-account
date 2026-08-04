@@ -25,6 +25,9 @@ export default defineConfig({
             type: 'image/svg+xml'
           }
         ]
+      },
+      workbox: {
+        importScripts: ['/push-sw.js']
       }
     })
   ],

@@ -5,5 +5,15 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron-daily-push",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron-monthly",
+      "schedule": "0 8 10 * *"
+    }
   ]
 }
