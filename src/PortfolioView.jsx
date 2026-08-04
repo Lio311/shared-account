@@ -363,8 +363,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       tooltip: {
         callbacks: {
           label: function(context) {
-             let label = context.label || '';
-             if (label) { label += ': '; }
+             let label = '';
              if (context.parsed !== null) {
                 label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'ILS' }).format(context.parsed);
                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
