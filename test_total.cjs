@@ -1,7 +1,7 @@
 const { Client } = require('pg');
 import('yahoo-finance2').then(({ default: YahooFinance }) => {
   const yahooFinance = new YahooFinance();
-  const client = new Client('postgresql://neondb_owner:npg_7gt0IRDvYAJW@ep-hidden-smoke-apxqgfzb-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require');
+  const client = new Client(process.env.DATABASE_URL);
   client.connect().then(async () => {
     const result = await client.query("SELECT symbol, shares, currency, purchase_price_ils FROM portfolio_stocks WHERE investment_id = 1 AND status = 'active'");
     let totalIls = 0;
