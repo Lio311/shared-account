@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_7gt0IRDvYAJW@ep-hidden-smoke-apxqgfzb-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const connectionString = process.env.DATABASE_URL;
 
 async function getBoiRate(currency, dateStr) {
   if (currency === 'ILS') return 1;
