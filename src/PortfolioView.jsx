@@ -471,12 +471,13 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
       {activeTab === 'allocation' && (
          <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '1.5rem', direction: 'rtl' }}>
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, marginBottom: '1.25rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', width: '100%', marginBottom: '1.5rem', direction: 'rtl' }}>
               <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0,0,0,0.05)', padding: '0.25rem', borderRadius: '0.5rem' }}>
                 <button
                   onClick={() => setAllocationView('stock')}
                   style={{
-                    border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
+                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold',
                     background: allocationView === 'stock' ? 'white' : 'transparent',
                     color: allocationView === 'stock' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: allocationView === 'stock' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
@@ -487,7 +488,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 <button
                   onClick={() => setAllocationView('sector')}
                   style={{
-                    border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
+                    border: 'none', padding: '0.35rem 0.6rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold',
                     background: allocationView === 'sector' ? 'white' : 'transparent',
                     color: allocationView === 'sector' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: allocationView === 'sector' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
@@ -496,7 +497,6 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   לפי סקטורים
                 </button>
               </div>
-              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>התפלגות נכסים</h2>
             </div>
             {allocationData.length > 0 ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
@@ -506,13 +506,13 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                 <div style={{ 
                   width: '100%', 
                   display: 'grid', 
-                  gridTemplateColumns: 'repeat(4, 1fr)', 
+                  gridTemplateColumns: 'repeat(3, 1fr)', 
                   columnGap: '0.25rem',
                   rowGap: '0.75rem',
                   direction: 'rtl'
                 }}>
                   {allocationLabels.map((label, index) => (
-                    <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'flex-start' }}>
+                    <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'flex-start', minWidth: 0 }}>
                       <div style={{ 
                         width: '12px', 
                         height: '12px', 
@@ -524,7 +524,9 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                         color: 'var(--text-main)', 
                         fontSize: '0.75rem', 
                         fontWeight: '600',
-                        whiteSpace: 'nowrap'
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
                       }}>
                         {label}
                       </span>
