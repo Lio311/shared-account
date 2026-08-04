@@ -4,6 +4,10 @@ const yahooFinance = new YahooFinance();
 
 const connectionString = process.env.DATABASE_URL;
 
+let boiRateCache = {};
+let lastBoiFetchTime = 0;
+let yahooQuoteCache = {};
+
 async function getBoiRate(currency, dateStr) {
   if (currency === 'ILS') return 1;
   try {
@@ -22,13 +26,23 @@ async function getBoiRate(currency, dateStr) {
           }
         }
       }
-    }
-    
-    const res = await fetch('https://boi.org.il/PublicApi/GetExchangeRates');
-    const data = await res.json();
-    const rateData = data.exchangeRates.find(r => r.key === currency);
-    if (rateData) {
-      return rateData.currentExchangeRate;
+    } else {
+      // Use cache if within 1 hour
+      if (boiRateCache[currency] && (Date.now() - lastBoiFetchTime < 1000 * 60 * 60)) {
+        return boiRateCache[currency];
+      }
+      const res = await fetch('https://boi.org.il/PublicApi/GetExchangeRates');
+      const data = await res.json();
+      
+      lastBoiFetchTime = Date.now();
+      for (const r of data.exchangeRates) {
+        boiRateCache[r.key] = r.currentExchangeRate;
+      }
+      
+      const rateData = data.exchangeRates.find(r => r.key === currency);
+      if (rateData) {
+        return rateData.currentExchangeRate;
+      }
     }
   } catch (err) {
     console.error("Error fetching BOI rate", err);
@@ -54,10 +68,9 @@ export default async function handler(req, res) {
       const invResult = await client.query('SELECT total_deposited FROM investments WHERE id = $1', [investmentId]);
       const totalDeposited = parseFloat(invResult.rows[0]?.total_deposited || 0);
 
-      const enrichedStocks = [];
       let totalCurrentValueIls = 0;
 
-      for (let stock of stocks) {
+      const enrichedStocks = await Promise.all(stocks.map(async (stock) => {
         let currentPriceFc = stock.purchase_price_fc;
         let currentExchangeRate = stock.purchase_exchange_rate;
         let dayChangePercent = 0;
@@ -80,7 +93,12 @@ export default async function handler(req, res) {
                   '1159250': 2486.60
                 };
                 
-                const quote = await yahooFinance.quote(`${stock.symbol}.TA`);
+                const cacheKey = `${stock.symbol}.TA`;
+                if (!yahooQuoteCache[cacheKey] || Date.now() - yahooQuoteCache[cacheKey].time > 1000 * 60 * 15) {
+                   yahooQuoteCache[cacheKey] = { quote: await yahooFinance.quote(cacheKey).catch(() => null), time: Date.now() };
+                }
+                const quote = yahooQuoteCache[cacheKey].quote;
+
                 if (quote && quote.regularMarketPrice) {
                   currentPriceFc = quote.regularMarketPrice / 100;
                   dayChangePercent = quote.regularMarketChangePercent || 0;
@@ -97,7 +115,12 @@ export default async function handler(req, res) {
               }
             } else {
               try {
-                const quote = await yahooFinance.quote(stock.symbol);
+                const cacheKey = stock.symbol;
+                if (!yahooQuoteCache[cacheKey] || Date.now() - yahooQuoteCache[cacheKey].time > 1000 * 60 * 15) {
+                   yahooQuoteCache[cacheKey] = { quote: await yahooFinance.quote(cacheKey).catch(() => null), time: Date.now() };
+                }
+                const quote = yahooQuoteCache[cacheKey].quote;
+
                 if (quote && quote.regularMarketPrice) {
                   currentPriceFc = quote.regularMarketPrice;
                   dayChangePercent = quote.regularMarketChangePercent || 0;
@@ -115,11 +138,7 @@ export default async function handler(req, res) {
 
         const currentValueIls = currentPriceFc * currentExchangeRate * stock.shares;
 
-        if (stock.status === 'active') {
-          totalCurrentValueIls += currentValueIls;
-        }
-
-        enrichedStocks.push({
+        return {
           ...stock,
           current_price_fc: currentPriceFc,
           current_exchange_rate: currentExchangeRate,
@@ -129,7 +148,13 @@ export default async function handler(req, res) {
           unrealized_pl_percent: stock.status === 'active' && parseFloat(stock.purchase_price_fc) > 0 ? ((currentPriceFc - parseFloat(stock.purchase_price_fc)) / parseFloat(stock.purchase_price_fc) * 100) : 0,
           unrealized_pl_ils: stock.status === 'active' ? (currentValueIls - stock.purchase_price_ils) : 0,
           realized_pl_ils: stock.status === 'sold' ? (stock.sale_price_ils - stock.purchase_price_ils) : 0
-        });
+        };
+      }));
+
+      for (const stock of enrichedStocks) {
+        if (stock.status === 'active') {
+          totalCurrentValueIls += stock.current_value_ils;
+        }
       }
 
       if (stocks.some(s => s.status === 'active') || stocks.length > 0) {
