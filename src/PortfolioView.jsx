@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, DollarSign, Activity, Percent, Trash2, ArrowRight } from 'lucide-react';
+import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, DollarSign, Activity, Percent, Trash2, ArrowRight, ArrowUpDown } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -17,6 +17,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const [selectedStock, setSelectedStock] = useState(null);
   const [isSoldStocksOpen, setIsSoldStocksOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortOption, setSortOption] = useState('default');
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositMode, setDepositMode] = useState('add'); // 'add' or 'set'
@@ -152,7 +153,20 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
   const cashStocks = stocks.filter(s => s.status === 'active' && (s.symbol === 'CASH_ILS' || s.symbol === 'CASH_USD'));
   const activeStocks = stocks.filter(s => s.status === 'active' && s.symbol !== 'CASH_ILS' && s.symbol !== 'CASH_USD');
-  const filteredActiveStocks = activeStocks.filter(stock => stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || stock.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const totalActiveValueIls = activeStocks.reduce((sum, s) => sum + parseFloat(s.current_value_ils || 0), 0);
+  const filteredActiveStocks = activeStocks
+    .filter(stock => stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || stock.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      switch (sortOption) {
+        case 'pct_high': return (parseFloat(b.current_value_ils) / totalActiveValueIls) - (parseFloat(a.current_value_ils) / totalActiveValueIls);
+        case 'pct_low': return (parseFloat(a.current_value_ils) / totalActiveValueIls) - (parseFloat(b.current_value_ils) / totalActiveValueIls);
+        case 'ils_high': return parseFloat(b.current_value_ils) - parseFloat(a.current_value_ils);
+        case 'ils_low': return parseFloat(a.current_value_ils) - parseFloat(b.current_value_ils);
+        case 'return_high': return parseFloat(b.unrealized_pl_percent) - parseFloat(a.unrealized_pl_percent);
+        case 'return_low': return parseFloat(a.unrealized_pl_percent) - parseFloat(b.unrealized_pl_percent);
+        default: return 0;
+      }
+    });
   const soldStocks = stocks.filter(s => s.status === 'sold');
 
   const totalPurchaseIls = activeStocks.reduce((sum, s) => sum + parseFloat(s.purchase_price_ils), 0);
@@ -258,6 +272,37 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                onChange={(e) => setSearchTerm(e.target.value)}
                className="form-input"
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+               <ArrowUpDown size={16} color="var(--text-muted)" />
+               <select
+                  value={sortOption}
+                  onChange={(e) => setSortOption(e.target.value)}
+                  style={{
+                     flex: 1,
+                     padding: '0.6rem 0.75rem',
+                     borderRadius: '0.75rem',
+                     border: '1px solid rgba(255,255,255,0.1)',
+                     background: 'rgba(255,255,255,0.05)',
+                     color: 'var(--text-main)',
+                     fontSize: '0.875rem',
+                     cursor: 'pointer',
+                     appearance: 'none',
+                     WebkitAppearance: 'none',
+                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+                     backgroundRepeat: 'no-repeat',
+                     backgroundPosition: 'left 0.75rem center',
+                     paddingLeft: '2rem'
+                  }}
+               >
+                  <option value="default">ברירת מחדל</option>
+                  <option value="pct_high">% מהתיק — מהגבוה לנמוך</option>
+                  <option value="pct_low">% מהתיק — מהנמוך לגבוה</option>
+                  <option value="ils_high">₪ שווי — מהגבוה לנמוך</option>
+                  <option value="ils_low">₪ שווי — מהנמוך לגבוה</option>
+                  <option value="return_high">תשואה — מהגבוהה לנמוכה</option>
+                  <option value="return_low">תשואה — מהנמוכה לגבוהה</option>
+               </select>
+            </div>
          </div>
          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {filteredActiveStocks.map(stock => (
@@ -281,7 +326,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   
                   <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                      <div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שווי הניה (₪)</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>שווי אחזקה (₪)</div>
                         <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">{formatMoney(stock.current_value_ils)}</div>
                      </div>
                      <div>
