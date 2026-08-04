@@ -83,12 +83,14 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       return;
     }
     try {
-      const registration = await navigator.serviceWorker.register('/push-sw.js');
+      // Must request permission BEFORE any other await to preserve user gesture in iOS Safari
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         showToast('יש לאשר קבלת התראות בדפדפן', 'error');
         return;
       }
+      
+      const registration = await navigator.serviceWorker.register('/push-sw.js');
       const vapidRes = await fetch('/api/vapid-public-key');
       const { publicKey } = await vapidRes.json();
       const convertedVapidKey = urlBase64ToUint8Array(publicKey);
