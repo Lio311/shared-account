@@ -39,6 +39,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   
   // Tabs & History
   const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio', 'history', 'allocation'
+  const [allocationView, setAllocationView] = useState('stock'); // 'stock' or 'sector'
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   
@@ -308,8 +309,39 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     }
   };
 
-  const allocationLabels = [...cashStocks.map(s => s.symbol === 'CASH_ILS' ? 'מזומן ₪' : 'מזומן $'), ...activeStocks.map(s => s.symbol)];
-  const allocationData = [...cashStocks.map(s => s.current_value_ils), ...activeStocks.map(s => s.current_value_ils)];
+  const getSector = (symbol) => {
+    const sectors = {
+      'NVDA': 'שבבים', 'AMD': 'שבבים', 'INTC': 'שבבים', 'TSM': 'שבבים', 'AVGO': 'שבבים', 'QCOM': 'שבבים', 'ASML': 'שבבים',
+      'AAPL': 'חומרה ותוכנה', 'MSFT': 'תוכנה', 'GOOGL': 'תוכנה / שירותים', 'GOOG': 'תוכנה / שירותים', 'META': 'תוכנה / שירותים', 'AMZN': 'מסחר / ענן', 'ADBE': 'תוכנה', 'CRM': 'תוכנה',
+      'JPM': 'פיננסים', 'BAC': 'פיננסים', 'V': 'פיננסים', 'MA': 'פיננסים', 'PYPL': 'פיננסים', 'WFC': 'פיננסים', 'GS': 'פיננסים',
+      'JNJ': 'בריאות', 'UNH': 'בריאות', 'PFE': 'בריאות', 'ABBV': 'בריאות', 'LLY': 'בריאות', 'MRK': 'בריאות',
+      'XOM': 'אנרגיה', 'CVX': 'אנרגיה', 'SHEL': 'אנרגיה',
+      'SPY': 'מדדים', 'QQQ': 'מדדים', 'DIA': 'מדדים', 'VOO': 'מדדים', 'IVV': 'מדדים', 'VTI': 'מדדים', 'VT': 'מדדים',
+      'TSLA': 'רכב / צריכה', 'WMT': 'קמעונאות', 'COST': 'קמעונאות', 'HD': 'קמעונאות',
+      'CASH_ILS': 'מזומן', 'CASH_USD': 'מזומן',
+    };
+    return sectors[symbol] || 'אחר';
+  };
+
+  let allocationLabels = [];
+  let allocationData = [];
+
+  if (allocationView === 'stock') {
+    allocationLabels = [...cashStocks.map(s => s.symbol === 'CASH_ILS' ? 'מזומן ₪' : 'מזומן $'), ...activeStocks.map(s => s.symbol)];
+    allocationData = [...cashStocks.map(s => s.current_value_ils), ...activeStocks.map(s => s.current_value_ils)];
+  } else {
+    const sectorTotals = {};
+    cashStocks.forEach(s => {
+      sectorTotals['מזומן'] = (sectorTotals['מזומן'] || 0) + parseFloat(s.current_value_ils);
+    });
+    activeStocks.forEach(s => {
+      const sector = getSector(s.symbol);
+      sectorTotals[sector] = (sectorTotals[sector] || 0) + parseFloat(s.current_value_ils);
+    });
+    allocationLabels = Object.keys(sectorTotals).sort((a, b) => sectorTotals[b] - sectorTotals[a]);
+    allocationData = allocationLabels.map(sec => sectorTotals[sec]);
+  }
+
   const pieColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f43f5e', '#6366f1', '#64748b', '#84cc16'];
 
   const allocationChartData = {
@@ -325,7 +357,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const allocationChartOptions = {
     responsive: true,
     plugins: {
-      legend: { position: 'bottom', labels: { color: '#e5e7eb', padding: 20, font: { family: 'Rubik, sans-serif' } } },
+      legend: { display: false },
       tooltip: {
         callbacks: {
           label: function(context) {
@@ -406,20 +438,20 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       </button>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.25rem', borderRadius: '0.75rem', marginBottom: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.8)', padding: '0.35rem', borderRadius: '1rem', marginBottom: '0.5rem', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
         <button 
           onClick={() => setActiveTab('portfolio')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'portfolio' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'portfolio' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'portfolio' ? 'var(--accent)' : 'transparent', color: activeTab === 'portfolio' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'portfolio' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'portfolio' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <Wallet size={16} /> התיק
         </button>
         <button 
           onClick={() => setActiveTab('history')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'history' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'history' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'history' ? 'var(--accent)' : 'transparent', color: activeTab === 'history' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'history' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'history' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <LineChart size={16} /> מגמה
         </button>
         <button 
           onClick={() => setActiveTab('allocation')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.5rem', border: 'none', background: activeTab === 'allocation' ? 'rgba(59,130,246,0.3)' : 'transparent', color: 'var(--text-main)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'allocation' ? 'bold' : 'normal', transition: 'all 0.2s' }}>
+          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'allocation' ? 'var(--accent)' : 'transparent', color: activeTab === 'allocation' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'allocation' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'allocation' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <PieChart size={16} /> פיזור
         </button>
       </div>
@@ -439,10 +471,66 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
       {activeTab === 'allocation' && (
          <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1.5rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '1.5rem', direction: 'rtl' }}>
+              <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0,0,0,0.05)', padding: '0.25rem', borderRadius: '0.5rem' }}>
+                <button
+                  onClick={() => setAllocationView('stock')}
+                  style={{
+                    border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
+                    background: allocationView === 'stock' ? 'white' : 'transparent',
+                    color: allocationView === 'stock' ? 'var(--accent)' : 'var(--text-muted)',
+                    boxShadow: allocationView === 'stock' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  לפי מניות
+                </button>
+                <button
+                  onClick={() => setAllocationView('sector')}
+                  style={{
+                    border: 'none', padding: '0.4rem 0.8rem', borderRadius: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold',
+                    background: allocationView === 'sector' ? 'white' : 'transparent',
+                    color: allocationView === 'sector' ? 'var(--accent)' : 'var(--text-muted)',
+                    boxShadow: allocationView === 'sector' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  לפי סקטורים
+                </button>
+              </div>
+              <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>התפלגות נכסים</h2>
+            </div>
             {allocationData.length > 0 ? (
-              <div style={{ width: '100%', maxWidth: '300px' }}>
-                <Doughnut options={allocationChartOptions} data={allocationChartData} />
+              <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
+                <div style={{ width: '100%', maxWidth: '300px' }}>
+                  <Doughnut options={allocationChartOptions} data={allocationChartData} />
+                </div>
+                <div style={{ 
+                  width: '100%', 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(4, 1fr)', 
+                  columnGap: '0.25rem',
+                  rowGap: '0.75rem',
+                  direction: 'rtl'
+                }}>
+                  {allocationLabels.map((label, index) => (
+                    <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'flex-start' }}>
+                      <div style={{ 
+                        width: '12px', 
+                        height: '12px', 
+                        backgroundColor: pieColors[index % pieColors.length],
+                        borderRadius: '3px',
+                        flexShrink: 0
+                      }} />
+                      <span style={{ 
+                        color: 'var(--text-main)', 
+                        fontSize: '0.75rem', 
+                        fontWeight: '600',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>אין נכסים פעילים בתיק.</div>
