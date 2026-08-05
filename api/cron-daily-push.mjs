@@ -156,7 +156,7 @@ export default async function handler(req, res) {
 
     for (const sub of subscriptions) {
       try {
-        await webpush.sendNotification(sub.keys, JSON.stringify({
+        await webpush.sendNotification(sub, JSON.stringify({
           title,
           body
         }));
