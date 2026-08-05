@@ -1039,6 +1039,12 @@ export default function App() {
       }
       
       const registration = await navigator.serviceWorker.register('/push-sw.js');
+      
+      const existingSubscription = await registration.pushManager.getSubscription();
+      if (existingSubscription) {
+        await existingSubscription.unsubscribe();
+      }
+
       const vapidRes = await fetch('/api/vapid-public-key');
       const { publicKey } = await vapidRes.json();
       const convertedVapidKey = urlBase64ToUint8Array(publicKey);
