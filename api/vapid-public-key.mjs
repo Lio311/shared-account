@@ -3,7 +3,7 @@ export default function handler(req, res) {
     return res.status(405).send('Method Not Allowed');
   }
   
-  const publicKey = process.env.VAPID_PUBLIC_KEY || 'BME9LOdF8qbwYFriwt6h70i0vzcv5YjCbJy0_RvE4OIDt2CE32SX-8hoIjLVFl_LmTPH9yOitw-S8Hz0gkZqa-s';
+  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BIM0xAWO_Q74HlZtHNUhyQIv94Lf3OX3XjMXO8c7sRuJVdgmwc874tsNgjsYuWByrICnC_0PS0GJN-rP0w1uiCg';
   
   res.status(200).json({ publicKey });
 }
