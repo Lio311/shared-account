@@ -344,11 +344,14 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   return (
     <div style={{ paddingBottom: '80px', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-         <button onClick={onBack} className="btn-secondary" style={{ padding: '0.5rem' }}>
-            <ArrowRight size={20} />
-         </button>
-         <h1 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--text-main)' }}>{investmentName}</h1>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+         <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
+           <button onClick={onBack} className="btn-secondary" style={{ padding: '0.5rem' }}>
+              <ArrowRight size={20} />
+           </button>
+         </div>
+         <h1 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--text-main)', textAlign: 'center' }}>{investmentName}</h1>
+         <div style={{ flex: 1 }}></div>
       </div>
 
       {/* Summary Card */}

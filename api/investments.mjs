@@ -54,8 +54,10 @@ export default async function handler(req, res) {
           let totalAdditions = 0;
           if (monthlyAdd > 0 && monthsElapsed > 0) {
             for (let i = 1; i <= monthsElapsed; i++) {
-              const monthsInInvest = monthsElapsed - i + 1;
-              totalAdditions += monthlyAdd * Math.pow(1 + r/12, monthsInInvest);
+              const additionDate = new Date(lastUpdate);
+              additionDate.setMonth(additionDate.getMonth() + i);
+              const yearsSinceAddition = Math.max(0, (now.getTime() - additionDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+              totalAdditions += monthlyAdd * Math.pow(1 + r/365.25, yearsSinceAddition * 365.25);
             }
           }
           
