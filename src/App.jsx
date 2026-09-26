@@ -1998,7 +1998,7 @@ export default function App() {
               ₪{totalBat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
-          <div className="glass-card summary-card" style={{ borderColor: 'rgba(168, 85, 247, 0.2)', padding: '1.2rem 1rem', textAlign: 'center' }}>
+          <div className="glass-card summary-card" style={{ borderColor: 'rgba(168, 85, 247, 0.2)', padding: '1.2rem 1rem', textAlign: 'center', gridColumn: '1 / -1' }}>
             <h3 style={{ color: '#a855f7', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>סה"כ השקעות - משותף</h3>
             <div style={{ color: '#a855f7', fontSize: '1.4rem', fontWeight: '800' }} dir="ltr">
               ₪{totalShared.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
