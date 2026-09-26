@@ -576,7 +576,7 @@ export default function App() {
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
     const staleInv = investments.find(inv => {
-      if (inv.owner_name !== currentUser) return false;
+      if (inv.owner_name !== currentUser && inv.owner_name !== 'השקעה משותפת') return false;
       const lastUpdate = new Date(inv.updated_at || inv.created_at);
       return lastUpdate < ninetyDaysAgo;
     });
@@ -1937,17 +1937,19 @@ export default function App() {
     // Filter by owners
     const benInvestments = investments.filter(inv => inv.owner_name === 'ליאור הבן');
     const batInvestments = investments.filter(inv => inv.owner_name === 'ליאור הבת');
+    const sharedInvestments = investments.filter(inv => inv.owner_name === 'השקעה משותפת');
 
     // Sum current values
     const totalBen = benInvestments.reduce((sum, inv) => sum + parseFloat(inv.current_value), 0);
     const totalBat = batInvestments.reduce((sum, inv) => sum + parseFloat(inv.current_value), 0);
+    const totalShared = sharedInvestments.reduce((sum, inv) => sum + parseFloat(inv.current_value), 0);
 
     return (
       <div className="tab-content fade-in">
         <div className="tab-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
           <div>
             <h1>ניהול ומעקב השקעות</h1>
-            <p>מעקב אחר קופות גמל, קרנות השתלמות, פקדונות וחשבונות מסחר של ליאור הבן וליאור הבת</p>
+            <p>מעקב אחר קופות גמל, קרנות השתלמות, פקדונות וחשבונות מסחר של ליאור הבן, ליאור הבת ומשותף</p>
           </div>
           <button 
             onClick={() => {
@@ -1994,6 +1996,12 @@ export default function App() {
             <h3 style={{ color: '#ec4899', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>סה"כ השקעות - ליאור הבת</h3>
             <div style={{ color: '#ec4899', fontSize: '1.4rem', fontWeight: '800' }} dir="ltr">
               ₪{totalBat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+          <div className="glass-card summary-card" style={{ borderColor: 'rgba(168, 85, 247, 0.2)', padding: '1.2rem 1rem', textAlign: 'center' }}>
+            <h3 style={{ color: '#a855f7', fontSize: '0.8rem', fontWeight: '500', marginBottom: '0.25rem' }}>סה"כ השקעות - משותף</h3>
+            <div style={{ color: '#a855f7', fontSize: '1.4rem', fontWeight: '800' }} dir="ltr">
+              ₪{totalShared.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         </div>
@@ -2089,6 +2097,81 @@ export default function App() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{inv.name}</span>
                       <span style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', padding: '0.2rem 0.5rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                        {inv.type}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                      <span style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--income)' }} dir="ltr">
+                        ₪{parseFloat(inv.current_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingInvestment(inv);
+                            setInvName(inv.name);
+                            setInvType(inv.type);
+                            setInvOwnerName(inv.owner_name);
+                            setInvCurrentValue(inv.current_value.toString());
+                            setInvInitialValue(inv.initial_value ? inv.initial_value.toString() : '');
+                            setInvMonthlyAddition(inv.monthly_addition ? inv.monthly_addition.toString() : '');
+                            setInvInterestType(inv.interest_type || 'prime');
+                            setInvInterestValue(inv.interest_value !== null ? inv.interest_value.toString() : '');
+                            setIsInvestmentModalOpen(true);
+                          }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                          title="ערוך"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteInvestment(inv.id);
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                          title="מחק"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                      {inv.type === 'פיקדון' && inv.current_interest_rate !== undefined && (
+                        <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>
+                          ריבית שנתית: {inv.current_interest_rate.toFixed(2)}%
+                        </span>
+                      )}
+                      {parseFloat(inv.initial_value) > 0 && (
+                        <div>השקעה ראשונית: ₪{parseFloat(inv.initial_value).toLocaleString()}</div>
+                      )}
+                      {parseFloat(inv.monthly_addition) > 0 && (
+                        <div>הפקדה חודשית: ₪{parseFloat(inv.monthly_addition).toLocaleString()}</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                      עדכון אחרון: {new Date(inv.updated_at || inv.created_at).toLocaleDateString('he-IL')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Shared Column */}
+          <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255, 255, 255, 0.02)' }}>
+            <h2 style={{ fontSize: '1.25rem', color: '#a855f7', marginBottom: '1.25rem', borderBottom: '2px solid rgba(168, 85, 247, 0.2)', paddingBottom: '0.5rem' }}>
+              השקעות - משותף
+            </h2>
+            {sharedInvestments.length === 0 ? (
+              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem 0' }}>אין השקעות רשומות</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {sharedInvestments.map(inv => (
+                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{inv.name}</span>
+                      <span style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', padding: '0.2rem 0.5rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold' }}>
                         {inv.type}
                       </span>
                     </div>
@@ -2616,6 +2699,7 @@ export default function App() {
                 >
                   <option value="ליאור הבן">ליאור הבן</option>
                   <option value="ליאור הבת">ליאור הבת</option>
+                  <option value="השקעה משותפת">השקעה משותפת</option>
                 </select>
               </div>
               <div className="form-group">
