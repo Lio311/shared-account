@@ -10,8 +10,8 @@ self.addEventListener('push', function(event) {
 
   const options = {
     body: data.body,
-    icon: '/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
-    badge: '/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
+    icon: '/mutual-logo.svg',
+    badge: '/mutual-logo.svg',
     vibrate: [100, 50, 100],
     tag: data.tag,
     data: {
