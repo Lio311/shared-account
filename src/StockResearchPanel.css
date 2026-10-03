@@ -60,3 +60,9 @@
 .research-history { border-top:1px solid var(--border-color); margin-bottom:.65rem; font-size:.75rem; line-height:1.7; }
 .research-history > summary { cursor:pointer; padding:.8rem 0; color:var(--accent); min-height:40px; }
 .research-eyebrow svg, .research-action-badge svg { order:1; }
+
+.research-action-badge svg { color:#000; }
+.research-history > summary, .research-evidence > summary { display:flex; align-items:center; gap:.3rem; list-style:none; }
+.research-history > summary::-webkit-details-marker, .research-evidence > summary::-webkit-details-marker { display:none; }
+.research-disclosure-icon { color:#000; flex-shrink:0; }
+.research-history[open] > summary .research-disclosure-icon, .research-evidence[open] > summary .research-disclosure-icon { transform:rotate(-90deg); }

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshCw, ArrowUpRight, ArrowDownRight, ExternalLink, Sparkles } from 'lucide-react';
+import { RefreshCw, ArrowUpRight, ArrowDownRight, ExternalLink, Sparkles, ChevronLeft } from 'lucide-react';
 import './StockResearchPanel.css';
 import StockRequestPanel from './StockRequestPanel';
 
@@ -42,8 +42,8 @@ function ResearchActionCard({ item, opportunity = false, requested = false }) {
     {data && <div className="research-metrics"><span>צמיחת הכנסות<strong dir="ltr">{percent(latest?.revenueGrowth ?? data.revenueGrowth)}</strong></span><span>שולי רווח תפעולי<strong dir="ltr">{percent(latest?.operatingMargin ?? data.operatingMargin)}</strong></span></div>}
     {latest?.periodEnd && <div className="research-latest-report"><p>דוח רבעוני · תקופה שהסתיימה ב־{reportDate(latest.periodEnd)}</p><div className="research-report-metrics">{metrics.filter(([, value]) => value !== '—').map(([label, value]) => <span key={label}>{label}<strong dir="ltr">{value}</strong></span>)}</div></div>}
     {valuation && <div className="research-valuation"><span>מכפיל רווח (TTM)<strong dir="ltr">{Number.isFinite(valuation.trailingPE) && valuation.trailingPE > 0 ? `×${valuation.trailingPE.toFixed(1)}` : '—'}</strong></span>{Number.isFinite(valuation.forwardPE) && valuation.forwardPE > 0 && <span>מכפיל חזוי<strong dir="ltr">×{valuation.forwardPE.toFixed(1)}</strong></span>}</div>}
-    <details className="research-history" onToggle={event => setChartsOpen(event.currentTarget.open)}><summary>מגמות לאורך השנה</summary>{chartsOpen && <Suspense fallback={<p className="research-date">טוען גרפים…</p>}><StockHistoryCharts symbol={item.symbol} /></Suspense>}</details>
-    <details className="research-evidence"><summary>למה? · מקור ונימוק</summary>
+    <details className="research-history" onToggle={event => setChartsOpen(event.currentTarget.open)}><summary>מגמות לאורך השנה<ChevronLeft className="research-disclosure-icon" size={14} aria-hidden="true" /></summary>{chartsOpen && <Suspense fallback={<p className="research-date">טוען גרפים…</p>}><StockHistoryCharts symbol={item.symbol} /></Suspense>}</details>
+    <details className="research-evidence"><summary>למה? · מקור ונימוק<ChevronLeft className="research-disclosure-icon" size={14} aria-hidden="true" /></summary>
       <p>{item.recommendation.reason}</p>
       {valuation?.analysis && <p>{valuation.analysis}</p>}
       {valuation?.methodology && <p className="research-date">{valuation.methodology}</p>}
@@ -116,7 +116,7 @@ export default function StockResearchPanel({ stocks = null, onEnableNotification
     <section className="stock-research" aria-labelledby="research-title" aria-busy={loading}>
       <StockRequestPanel onEnableNotifications={onEnableNotifications} renderAnalysis={item => <ResearchActionCard item={item} requested />} />
       <div className="research-heading">
-        <div><span className="research-eyebrow"><Sparkles size={14} aria-hidden="true" />התיק שלך, במבט קדימה</span><h2 id="research-title">{universe === 'new' ? 'חמות מחוץ לתיק' : 'מה כדאי לשנות'}</h2></div>
+        <div><span className="research-eyebrow">התיק שלך, במבט קדימה</span><h2 id="research-title">{universe === 'new' ? 'חמות מחוץ לתיק' : 'מה כדאי לשנות'}</h2></div>
         <button type="button" className="research-refresh" aria-label="רענון ההמלצות" onClick={loadReport} disabled={loading}><RefreshCw size={18} className={loading ? 'research-spinning' : ''} aria-hidden="true" /></button>
       </div>
       <p className="research-date">הצעות קנייה ומכירה לבחינתך · מתעדכן כל 8 שעות{report ? ` · ${formatDate(report.scannedAt)}` : ''}</p>
