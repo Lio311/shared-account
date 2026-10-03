@@ -1,194 +1,55 @@
 import { Client } from 'pg';
-import YahooFinance from 'yahoo-finance2';
 import webpush from 'web-push';
-
-const yahooFinance = new YahooFinance();
-const connectionString = process.env.DATABASE_URL;
-
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-  process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BIM0xAWO_Q74HlZtHNUhyQIv94Lf3OX3XjMXO8c7sRuJVdgmwc874tsNgjsYuWByrICnC_0PS0GJN-rP0w1uiCg',
-  process.env.VAPID_PRIVATE_KEY || '4vyeT_COryu8ilf5YXpS2zsNjCXgzYWm3rrNXeL09mw'
-);
-
-async function getBoiRate(currency) {
-  if (currency === 'ILS') return 1;
-  try {
-    const res = await fetch('https://boi.org.il/PublicApi/GetExchangeRates');
-    const data = await res.json();
-    const rateData = data.exchangeRates.find(r => r.key === currency);
-    if (rateData) {
-      return rateData.currentExchangeRate;
-    }
-  } catch (err) {
-    console.error("Error fetching BOI rate", err);
-  }
-  return 1;
-}
+import portfolioHandler from './portfolio.mjs';
+import { issueSession, requireCron } from './_lib/auth.mjs';
+import { closeClient } from './_lib/validation.mjs';
 
 export default async function handler(req, res) {
-  // In production, ensure this is called by Vercel Cron
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const client = new Client({ connectionString });
-
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!requireCron(req, res)) return;
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) return res.status(503).json({ error: 'Push notifications are not configured' });
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', publicKey, privateKey);
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
   try {
     await client.connect();
-
-    // Fetch all active stocks
-    const result = await client.query("SELECT * FROM portfolio_stocks WHERE status = 'active'");
-    const stocks = result.rows;
-    
-    // Fetch total deposited
-    const invResult = await client.query("SELECT id, total_deposited FROM investments LIMIT 1");
-    const totalDeposited = parseFloat(invResult.rows[0]?.total_deposited || 0);
-
-    let totalCurrentValueIls = 0;
-    let totalPreviousValueIls = 0;
-
-    for (let stock of stocks) {
-      let currentPriceFc = parseFloat(stock.purchase_price_fc);
-      let currentExchangeRate = parseFloat(stock.purchase_exchange_rate);
-      let dayChangePercent = 0;
-
-      if (stock.symbol === 'CASH_ILS') {
-        currentPriceFc = 1;
-        currentExchangeRate = 1;
-      } else if (stock.symbol === 'CASH_USD') {
-        currentPriceFc = 1;
-        currentExchangeRate = await getBoiRate('USD');
-      } else {
-        const isIsraeli = stock.symbol.match(/^\d{6,7}$/);
-        if (isIsraeli) {
-          currentExchangeRate = 1;
-          try {
-            const knownIsraeliPrices = {
-              '1183441': 46.34,
-              '1159250': 2486.60
-            };
-            const quote = await yahooFinance.quote(`${stock.symbol}.TA`);
-            if (quote && quote.regularMarketPrice) {
-              currentPriceFc = quote.regularMarketPrice / 100;
-              dayChangePercent = quote.regularMarketChangePercent || 0;
-            } else {
-              currentPriceFc = knownIsraeliPrices[stock.symbol] || parseFloat(stock.purchase_price_fc);
-            }
-          } catch (e) {
-            const knownIsraeliPrices = {
-              '1183441': 46.34,
-              '1159250': 2486.60
-            };
-            currentPriceFc = knownIsraeliPrices[stock.symbol] || parseFloat(stock.purchase_price_fc);
-          }
-        } else {
-          try {
-            const quote = await yahooFinance.quote(stock.symbol);
-            if (quote && quote.regularMarketPrice) {
-              currentPriceFc = quote.regularMarketPrice;
-              dayChangePercent = quote.regularMarketChangePercent || 0;
-            }
-          } catch (e) {
-            console.error(`Failed to fetch Yahoo Finance for ${stock.symbol}`, e.message);
-          }
-          currentExchangeRate = await getBoiRate(stock.currency);
-        }
+    const investments = await client.query("SELECT id, name FROM investments WHERE type = 'חשבון מסחר' ORDER BY id");
+    const subscriptions = (await client.query('SELECT id, endpoint, keys FROM push_subscriptions')).rows;
+    const portfolios = [];
+    let notified = 0, failed = 0;
+    for (const investment of investments.rows) {
+      // Reuse the read-only valuation path, with an internally issued signed session.
+      let cookie;
+      issueSession(req, { setHeader: (_name, value) => { cookie = value.split(';')[0]; } }, 'ליאור הבן');
+      const response = { statusCode: 200, status(code) { this.statusCode = code; return this; }, setHeader() {}, json(body) { this.body = body; }, send(body) { this.body = body; } };
+      await portfolioHandler({ method: 'GET', query: { investment_id: investment.id }, headers: { cookie } }, response);
+      if (response.statusCode !== 200 || response.body.valuation_warnings.length) {
+        portfolios.push({ investment_id: investment.id, status: 'skipped', reason: 'Incomplete live valuation' });
+        continue;
       }
-
-      const currentValueIls = currentPriceFc * currentExchangeRate * parseFloat(stock.shares);
-      
-      // Calculate previous day value for this stock
-      // New Value = Old Value * (1 + change%)
-      // Old Value = New Value / (1 + change%)
-      let prevValueIls = currentValueIls;
-      if (dayChangePercent !== 0) {
-        prevValueIls = currentValueIls / (1 + (dayChangePercent / 100));
-      }
-
-      totalCurrentValueIls += currentValueIls;
-      totalPreviousValueIls += prevValueIls;
-    }
-
-    const overallPlIls = totalCurrentValueIls - totalDeposited;
-    const overallPlPercent = totalDeposited > 0 ? (overallPlIls / totalDeposited) * 100 : 0;
-    
-    const dailyPlIls = totalCurrentValueIls - totalPreviousValueIls;
-    const dailyPlPercent = totalPreviousValueIls > 0 ? (dailyPlIls / totalPreviousValueIls) * 100 : 0;
-
-    // Save snapshot
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-        id SERIAL PRIMARY KEY,
-        investment_id INTEGER REFERENCES investments(id) ON DELETE CASCADE,
-        total_value_ils NUMERIC NOT NULL,
-        date DATE NOT NULL DEFAULT CURRENT_DATE,
+      const valuation = response.body;
+      await client.query(`CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+        id SERIAL PRIMARY KEY, investment_id INTEGER REFERENCES investments(id) ON DELETE CASCADE,
+        total_value_ils NUMERIC NOT NULL, date DATE NOT NULL DEFAULT CURRENT_DATE,
         UNIQUE(investment_id, date)
-      )
-    `);
-
-    // Assume investment_id = 1 for now, or fetch from invResult if there's an active one. We use the first one from invResult (which should be 1).
-    const investmentId = invResult.rows[0]?.id || 1;
-    await client.query(`
-      INSERT INTO portfolio_snapshots (investment_id, total_value_ils, date) 
-      VALUES ($1, $2, CURRENT_DATE) 
-      ON CONFLICT (investment_id, date) 
-      DO UPDATE SET total_value_ils = EXCLUDED.total_value_ils
-    `, [investmentId, totalCurrentValueIls]);
-
-    const formatMoney = (val) => {
-      const num = parseFloat(val || 0);
-      const formatted = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(num));
-      return `${num < 0 ? '-' : ''}₪${formatted}`;
-    };
-
-    const title = 'סיכום תיק יומי 📈';
-    const body = `התיק ${dailyPlPercent >= 0 ? 'עלה' : 'ירד'} היום ב-${Math.abs(dailyPlPercent).toFixed(2)}% (${formatMoney(dailyPlIls)})\n` +
-                 `סה״כ רווח פתוח: ${overallPlPercent >= 0 ? '+' : ''}${overallPlPercent.toFixed(2)}% (${formatMoney(overallPlIls)})\n` +
-                 `שווי כולל: ${formatMoney(totalCurrentValueIls)}`;
-
-    // Fetch all push subscriptions
-    const subRes = await client.query('SELECT * FROM push_subscriptions');
-    const subscriptions = subRes.rows;
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const sub of subscriptions) {
-      try {
-        await webpush.sendNotification(sub, JSON.stringify({
-          title,
-          body
-        }));
-        successCount++;
-      } catch (err) {
-        if (err.statusCode === 410 || err.statusCode === 404) {
-          // Subscription has expired or is no longer valid
-          await client.query('DELETE FROM push_subscriptions WHERE id = $1', [sub.id]);
-        } else {
-          console.error('Push notification failed for a subscriber:', err);
+      )`);
+      await client.query(`INSERT INTO portfolio_snapshots (investment_id, total_value_ils, date)
+        VALUES ($1, $2, CURRENT_DATE) ON CONFLICT (investment_id, date)
+        DO UPDATE SET total_value_ils = EXCLUDED.total_value_ils`, [investment.id, valuation.portfolioValue]);
+      const formatMoney = value => new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(value);
+      const payload = JSON.stringify({ title: `סיכום תיק יומי — ${investment.name}`, body: `שווי התיק: ${formatMoney(valuation.portfolioValue)}\nשינוי לעומת הפקדות: ${formatMoney(valuation.overallPlIls)}` });
+      for (const sub of subscriptions) {
+        try { await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload); notified++; }
+        catch (error) {
+          failed++;
+          if (error.statusCode === 404 || error.statusCode === 410) await client.query('DELETE FROM push_subscriptions WHERE id = $1', [sub.id]);
         }
-        failCount++;
       }
+      portfolios.push({ investment_id: investment.id, status: 'saved', portfolioValue: valuation.portfolioValue });
     }
-
-    return res.status(200).json({ 
-      success: true, 
-      notified: successCount, 
-      failed: failCount,
-      stats: {
-        portfolioValue: totalCurrentValueIls,
-        dailyPlIls,
-        dailyPlPercent,
-        overallPlIls,
-        overallPlPercent
-      }
-    });
-
-  } catch (error) {
-    console.error('Cron Error:', error);
-    return res.status(500).json({ error: error.message });
-  } finally {
-    await client.end();
-  }
+    return res.status(200).json({ success: true, notified, failed, portfolios });
+  } catch {
+    return res.status(500).json({ error: 'Daily summary failed' });
+  } finally { await closeClient(client); }
 }

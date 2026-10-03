@@ -1,4 +1,3 @@
-const fs = require('fs');
 const xlsx = require('xlsx');
 const { Client } = require('pg');
 

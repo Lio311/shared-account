@@ -1,4 +1,6 @@
+import { requireAuth } from './_lib/auth.mjs';
 import { Client } from 'pg';
+import { HttpError, finiteNumber, positiveId, requiredText, validDate, performedBy as getPerformedBy, closeClient } from './_lib/validation.mjs';
 
 export const config = {
   api: {
@@ -7,15 +9,19 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
   });
 
-  const rawPerformedBy = req.headers['x-performed-by'] || 'מערכת';
-  const performedBy = decodeURIComponent(rawPerformedBy);
+  const performedBy = getPerformedBy(req);
 
+  let inTransaction = false;
   try {
+    if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return res.status(405).send('Method Not Allowed');
     await client.connect();
+    if (req.method !== 'GET') { await client.query('BEGIN'); inTransaction = true; }
 
     if (req.method === 'GET') {
       const result = await client.query('SELECT * FROM salaries ORDER BY month DESC');
@@ -35,14 +41,17 @@ export default async function handler(req, res) {
       });
 
       const formData = await webReq.formData();
-      const person_name = formData.get('person_name');
-      const amount = parseFloat(formData.get('amount'));
-      const month = formData.get('month');
+      const person_name = requiredText(formData.get('person_name'), 'person_name');
+      const amount = finiteNumber(formData.get('amount'), 'amount', { exclusive: true });
+      const monthInput = formData.get('month');
+      const month = validDate(/^\d{4}-\d{2}$/.test(monthInput) ? `${monthInput}-01` : monthInput, 'month').slice(0, 10);
       const payslip = formData.get('payslip');
 
       let payslip_url = null;
 
       if (payslip && typeof payslip !== 'string' && payslip.size > 0) {
+        if (payslip.size > 5 * 1024 * 1024) throw new HttpError(400, 'Payslip exceeds 5 MB');
+        if (payslip.type !== 'application/pdf') throw new HttpError(400, 'Payslip must be a PDF');
         const arrayBuffer = await payslip.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         const base64Data = buffer.toString('base64');
@@ -72,11 +81,12 @@ export default async function handler(req, res) {
         [performedBy, 'הוספה', 'משכורת', auditDesc]
       );
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(201).json(result.rows[0]);
     }
 
     if (req.method === 'DELETE') {
-      const id = parseInt(req.query.id);
+      const id = positiveId(req.query?.id);
       if (!id) {
         return res.status(400).json({ error: 'Missing salary ID' });
       }
@@ -89,20 +99,18 @@ export default async function handler(req, res) {
       const { person_name, amount, month, payslip_url } = salaryRes.rows[0];
 
       if (payslip_url) {
-        try {
+        {
           const parts = payslip_url.split('/');
           const filename = parts[parts.length - 1];
           await client.query('DELETE FROM payslips WHERE filename = $1', [filename]);
-        } catch (blobErr) {
-          console.error('Error deleting payslip from DB:', blobErr);
         }
       }
 
       await client.query('DELETE FROM salaries WHERE id = $1', [id]);
 
       await client.query(
-        "DELETE FROM transactions WHERE description = $1 AND category = 'משכורת' AND type = 'income'",
-        [`משכורת - ${person_name}`]
+        "DELETE FROM transactions WHERE id = (SELECT id FROM transactions WHERE description = $1 AND category = 'משכורת' AND type = 'income' AND amount = $2 AND date::date = $3::date ORDER BY id ASC LIMIT 1)",
+        [`משכורת - ${person_name}`, amount, month]
       );
 
       const auditDesc = `נמחק תלוש שכר ומשכורת עבור "${person_name}" על סך ₪${Number(amount).toLocaleString()} לחודש ${String(month).substring(0, 7)}`;
@@ -111,14 +119,16 @@ export default async function handler(req, res) {
         [performedBy, 'מחיקה', 'משכורת', auditDesc]
       );
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(200).json({ success: true });
     }
 
     return res.status(405).send('Method Not Allowed');
   } catch (error) {
     console.error('Database Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Operation failed' });
   } finally {
-    await client.end();
+    if (inTransaction) { try { await client.query('ROLLBACK'); } catch { /* Connection may already be closed. */ } }
+    await closeClient(client);
   }
 }

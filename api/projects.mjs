@@ -1,15 +1,22 @@
+import { requireAuth } from './_lib/auth.mjs';
 import { Client } from 'pg';
+import { bodyObject, positiveId, requiredText, performedBy as getPerformedBy, closeClient } from './_lib/validation.mjs';
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
   });
 
-  const rawPerformedBy = req.headers['x-performed-by'] || 'מערכת';
-  const performedBy = decodeURIComponent(rawPerformedBy);
+  const performedBy = getPerformedBy(req);
 
+  let inTransaction = false;
   try {
+    if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return res.status(405).send('Method Not Allowed');
+    if (['POST', 'PUT'].includes(req.method)) req.body = bodyObject(req.body);
     await client.connect();
+    if (req.method !== 'GET') { await client.query('BEGIN'); inTransaction = true; }
 
     if (req.method === 'GET') {
       const result = await client.query('SELECT * FROM projects ORDER BY name ASC');
@@ -17,8 +24,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      const { name } = body;
+      const body = bodyObject(req.body);
+      const name = requiredText(body.name, 'name');
       if (!name || name.trim() === '') {
         return res.status(400).send('Project name is required');
       }
@@ -34,11 +41,12 @@ export default async function handler(req, res) {
         [performedBy, 'הוספה', 'פרויקט', auditDesc]
       );
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(201).json(result.rows[0]);
     }
 
     if (req.method === 'DELETE') {
-      const id = req.query.id;
+      const id = positiveId(req.query?.id);
       if (!id) {
         return res.status(400).send('Project ID is required');
       }
@@ -57,14 +65,16 @@ export default async function handler(req, res) {
         [performedBy, 'מחיקה', 'פרויקט', auditDesc]
       );
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(200).json({ success: true });
     }
 
     return res.status(405).send('Method Not Allowed');
   } catch (error) {
     console.error('Database Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Operation failed' });
   } finally {
-    await client.end();
+    if (inTransaction) { try { await client.query('ROLLBACK'); } catch { /* Connection may already be closed. */ } }
+    await closeClient(client);
   }
 }

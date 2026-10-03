@@ -1,0 +1,13 @@
+.git
+.env*
+private-data
+*.xlsx
+/*.cjs
+/*.mjs
+scripts
+tests
+QA_REPORT.md
+/temp_ledger.csv
+/import.sql
+!api/**
+!lib/**

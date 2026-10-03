@@ -1,8 +1,11 @@
+import { requireAuth } from './_lib/auth.mjs';
 import { Client } from 'pg';
 
 const connectionString = process.env.DATABASE_URL;
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

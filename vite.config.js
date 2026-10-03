@@ -11,6 +11,8 @@ export default defineConfig({
       manifest: {
         name: 'חשבון משותף',
         short_name: 'חשבון משותף',
+        lang: 'he',
+        dir: 'rtl',
         description: 'מערכת לניהול החשבון המשותף של ליאור וליאור',
         theme_color: '#ffffff',
         icons: [

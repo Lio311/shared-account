@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, DollarSign, Activity, Percent, Trash2, ArrowRight, ArrowUpDown, Bell, PieChart, LineChart, Wallet } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ChevronRight, ChevronDown, PlusCircle, TrendingUp, TrendingDown, ArrowRight, ArrowUpDown, PieChart, LineChart, Wallet, Newspaper } from 'lucide-react';
+import StockResearchPanel from './StockResearchPanel';
+import { numberOrNull, numberOrZero, positiveNumber, formatPortfolioMoney, filterAndSortHoldings, validTransactionDate } from './portfolioUtils.mjs';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
 import { he } from 'date-fns/locale';
@@ -36,12 +38,26 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const [totalDeposited, setTotalDeposited] = useState(0);
   const [overallPlIls, setOverallPlIls] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [portfolioError, setPortfolioError] = useState('');
+  const [loadedInvestmentId, setLoadedInvestmentId] = useState(null);
+  const [retrievedAt, setRetrievedAt] = useState(null);
+  const [valuationWarnings, setValuationWarnings] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const scopeRef = useRef(investmentId);
+  const portfolioRequest = useRef(0);
+  const historyRequest = useRef(0);
+  const toastRef = useRef(showToast);
+  useEffect(() => { toastRef.current = showToast; }, [showToast]);
+
   
   // Tabs & History
-  const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio', 'history', 'allocation'
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('view') === 'research' ? 'research' : 'portfolio');
   const [allocationView, setAllocationView] = useState('stock'); // 'stock' or 'sector'
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [historyInvestmentId, setHistoryInvestmentId] = useState(null);
   
   // Modals
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
@@ -65,178 +81,195 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
   const [sellPrice, setSellPrice] = useState('');
   const [sellShares, setSellShares] = useState('');
   const [sellDate, setSellDate] = useState(new Date());
-
-
-
-  const handleDeposit = async (e) => {
-    e.preventDefault();
-    const amount = parseFloat(depositAmount);
-    if (!amount || amount <= 0) { showToast('הזן סכום תקין', 'error'); return; }
-    try {
-      const body = depositMode === 'add'
-        ? { investment_id: investmentId, add_amount: amount }
-        : { investment_id: investmentId, set_amount: amount };
-      const res = await fetch('/api/portfolio', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (res.ok) {
-        showToast(depositMode === 'add' ? `הופקדו ${amount.toLocaleString()} ₪ נוספו בהצלחה!` : `סכום הפקדות עודכן ל-${amount.toLocaleString()} ₪`);
+  const dialogRef = useRef(null);
+  const modalOpen = isBuyModalOpen || isSellModalOpen || isDepositModalOpen;
+  useEffect(() => {
+    if (!modalOpen) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const opener = document.activeElement;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const selector = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])';
+    const calendar = () => document.getElementById('root-portal');
+    const inside = element => dialog.contains(element) || Boolean(calendar()?.contains(element));
+    const focusables = () => [...dialog.querySelectorAll(selector), ...(calendar()?.querySelectorAll(selector) || [])].filter(element => element.getClientRects().length > 0 && element.tabIndex >= 0);
+    const frame = requestAnimationFrame(() => (dialog.querySelector('input:not(:disabled)') || focusables()[0] || dialog).focus());
+    const handleKey = event => {
+      if (event.key === 'Escape') {
+        if (savingRef.current || calendar()?.querySelector('.react-datepicker')) return;
+        event.preventDefault();
+        setIsBuyModalOpen(false);
+        setIsSellModalOpen(false);
         setIsDepositModalOpen(false);
-        setDepositAmount('');
-        fetchPortfolio(); // Re-fetch to reflect updated cash balance and portfolio value
-      } else { showToast('שגיאה בעדכון', 'error'); }
-    } catch { showToast('שגיאת רשת', 'error'); }
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusables();
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first) { event.preventDefault(); dialog.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || !inside(document.activeElement))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !inside(document.activeElement))) { event.preventDefault(); first.focus(); }
+    };
+    const handleFocus = event => {
+      if (!inside(event.target)) (focusables()[0] || dialog).focus();
+    };
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('focusin', handleFocus);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('focusin', handleFocus);
+      document.body.style.overflow = oldOverflow;
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, [modalOpen]);
+
+
+
+
+  const responseError = async (res, fallback) => {
+    if (res.status === 401) {
+      window.dispatchEvent(new Event('shared-account-auth-expired'));
+      return 'ההתחברות פגה. יש להתחבר שוב כדי להמשיך.';
+    }
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      const message = data.error || data.message || fallback;
+      const translations = {
+        'Investment not found': 'התיק לא נמצא. חזור לרשימת ההשקעות.',
+        'Insufficient cash balance in purchase currency': 'אין מספיק מזומן במטבע הקנייה. יש לעדכן את יתרת המזומן לפני רישום הקנייה.',
+        'Currency must match existing holding': 'מטבע הקנייה חייב להתאים למטבע ההחזקה הקיימת.',
+        'Holding is not available for sale': 'ההחזקה אינה זמינה למכירה. רענן את התיק.',
+        'Sale quantity exceeds available shares': 'כמות המכירה גדולה מהיתרה הזמינה. רענן את התיק.',
+        'Sale date precedes purchase date': 'תאריך המכירה קודם לתאריך הקנייה.',
+        'Deposit correction exceeds available cash': 'תיקון ההפקדות גדול מיתרת המזומן הזמינה.',
+        'Portfolio operation failed': 'שמירת הפעולה נכשלה. נסה שוב.',
+      };
+      if (typeof message === 'string' && message.startsWith('Exchange rate unavailable')) return 'שער ההמרה אינו זמין כרגע. הפעולה לא נשמרה; נסה שוב מאוחר יותר.';
+      return translations[message] || message;
+    }
+    catch { return text && !text.includes('<') && text.length < 250 ? text : fallback; }
   };
 
   const fetchPortfolio = useCallback(async () => {
+    const request = ++portfolioRequest.current;
+    await Promise.resolve();
+    if (request !== portfolioRequest.current || scopeRef.current !== investmentId) return;
+    setLoading(true);
+    setPortfolioError('');
     try {
-      const res = await fetch(`/api/portfolio?investment_id=${investmentId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStocks(data.stocks);
-        setPortfolioValue(data.portfolioValue);
-        setTotalDeposited(data.totalDeposited || 0);
-        setOverallPlIls(data.overallPlIls ?? (data.portfolioValue - (data.totalDeposited || 0)));
-      } else {
-         showToast("שגיאה במשיכת התיק", "error");
-      }
+      const res = await fetch(`/api/portfolio?investment_id=${encodeURIComponent(investmentId)}`);
+      if (!res.ok) throw new Error(await responseError(res, 'שגיאה במשיכת התיק'));
+      const data = await res.json();
+      if (!Array.isArray(data.stocks) || numberOrNull(data.portfolioValue) === null) throw new Error('השרת החזיר נתוני תיק לא תקינים');
+      if (request !== portfolioRequest.current || scopeRef.current !== investmentId) return;
+      setStocks(data.stocks);
+      setPortfolioValue(numberOrZero(data.portfolioValue));
+      setTotalDeposited(numberOrZero(data.totalDeposited));
+      setOverallPlIls(numberOrNull(data.overallPlIls) ?? (numberOrZero(data.portfolioValue) - numberOrZero(data.totalDeposited)));
+      setValuationWarnings(Array.isArray(data.valuation_warnings) ? data.valuation_warnings : []);
+      setLoadedInvestmentId(investmentId);
+      setRetrievedAt(new Date());
     } catch (err) {
-      console.error(err);
-      showToast("שגיאת רשת", "error");
+      if (request === portfolioRequest.current && scopeRef.current === investmentId) setPortfolioError(err.message || 'שגיאת רשת');
     } finally {
-      setLoading(false);
+      if (request === portfolioRequest.current && scopeRef.current === investmentId) setLoading(false);
     }
-  }, [investmentId, showToast]);
+  }, [investmentId]);
 
   const fetchHistory = useCallback(async () => {
+    const request = ++historyRequest.current;
+    await Promise.resolve();
+    if (request !== historyRequest.current || scopeRef.current !== investmentId) return;
     setHistoryLoading(true);
+    setHistoryError('');
     try {
-      const res = await fetch(`/api/portfolio-history?investment_id=${investmentId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setHistoryData(data);
-      } else {
-        showToast("שגיאה במשיכת היסטוריה", "error");
-      }
+      const res = await fetch(`/api/portfolio-history?investment_id=${encodeURIComponent(investmentId)}`);
+      if (!res.ok) throw new Error(await responseError(res, 'שגיאה במשיכת היסטוריה'));
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error('נתוני ההיסטוריה אינם תקינים');
+      if (request !== historyRequest.current || scopeRef.current !== investmentId) return;
+      setHistoryData(data.filter(row => Number.isFinite(new Date(row.date).getTime()) && numberOrNull(row.total_value_ils) !== null).sort((a, b) => new Date(a.date) - new Date(b.date)));
+      setHistoryInvestmentId(investmentId);
     } catch (err) {
-      console.error(err);
-      showToast("שגיאת רשת בהיסטוריה", "error");
+      if (request === historyRequest.current && scopeRef.current === investmentId) {
+        setHistoryError(err.message || 'שגיאת רשת בהיסטוריה');
+        setHistoryInvestmentId(investmentId);
+      }
     } finally {
-      setHistoryLoading(false);
+      if (request === historyRequest.current && scopeRef.current === investmentId) setHistoryLoading(false);
     }
-  }, [investmentId, showToast]);
+  }, [investmentId]);
 
   useEffect(() => {
-    fetchPortfolio();
-  }, [fetchPortfolio]);
+    scopeRef.current = investmentId;
+    let cancelled = false;
+    queueMicrotask(() => { if (!cancelled) fetchPortfolio(); });
+    return () => { cancelled = true; scopeRef.current = null; };
+  }, [investmentId, fetchPortfolio]);
 
   useEffect(() => {
-    if (activeTab === 'history' && historyData.length === 0) {
-      fetchHistory();
-    }
-  }, [activeTab, fetchHistory, historyData.length]);
+    let cancelled = false;
+    if (activeTab === 'history' && historyInvestmentId !== investmentId) queueMicrotask(() => { if (!cancelled) fetchHistory(); });
+    return () => { cancelled = true; };
+  }, [activeTab, fetchHistory, historyInvestmentId, investmentId]);
 
-  const handleBuy = async (e) => {
-    e.preventDefault();
-    if (!buySymbol || !buyShares || !buyPrice) {
-      showToast("יש למלא את כל שדות החובה", "error");
-      return;
-    }
-    
-    setLoading(true);
+  const saveTransaction = async (method, body, success, closeModal) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    const scope = investmentId;
     try {
-      const res = await fetch('/api/portfolio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          investment_id: investmentId,
-          symbol: buySymbol,
-          shares: buyShares,
-          currency: buyCurrency,
-          purchase_price_fc: buyPrice,
-          purchase_date: format(buyDate, 'yyyy-MM-dd')
-        })
-      });
-      if (res.ok) {
-        showToast("מניה נוספה בהצלחה!");
-        setIsBuyModalOpen(false);
-        setBuySymbol('');
-        setBuyShares('');
-        setBuyPrice('');
-        fetchPortfolio();
-      } else {
-        showToast("שגיאה בהוספת מניה", "error");
-      }
+      const res = await fetch('/api/portfolio', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(await responseError(res, 'שמירת הפעולה נכשלה'));
+      if (scopeRef.current !== scope) return;
+      toastRef.current(success);
+      closeModal();
+      historyRequest.current++;
+      setHistoryInvestmentId(null);
+      await fetchPortfolio();
     } catch (err) {
-      console.error(err);
-      showToast("שגיאת רשת", "error");
-    } finally {
-      setLoading(false);
-    }
+      if (scopeRef.current === scope) toastRef.current(err.message || 'שגיאת רשת', 'error');
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
-  const handleSell = async (e) => {
+  const handleDeposit = e => {
     e.preventDefault();
-    if (!sellPrice) {
-      showToast("יש להזין מחיר מכירה", "error");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch('/api/portfolio', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: selectedStock.id,
-          sale_price_fc: sellPrice,
-          sale_shares: sellShares || selectedStock.shares,
-          sale_date: format(sellDate, 'yyyy-MM-dd')
-        })
-      });
-      if (res.ok) {
-        showToast("מניה נמכרה בהצלחה!");
-        setIsSellModalOpen(false);
-        setSellPrice('');
-        setSellShares('');
-        fetchPortfolio();
-      } else {
-        showToast("שגיאה במכירה", "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("שגיאת רשת", "error");
-    } finally {
-      setLoading(false);
-    }
+    const amount = positiveNumber(depositAmount);
+    if (amount === null) { showToast('הזן סכום חיובי ותקין', 'error'); return; }
+    saveTransaction('PATCH', depositMode === 'add' ? { investment_id: investmentId, add_amount: amount } : { investment_id: investmentId, set_amount: amount }, 'ההפקדות עודכנו בהצלחה', () => { setIsDepositModalOpen(false); setDepositAmount(''); });
   };
 
-  const cashStocks = stocks.filter(s => s.status === 'active' && (s.symbol === 'CASH_ILS' || s.symbol === 'CASH_USD'));
-  const activeStocks = stocks.filter(s => s.status === 'active' && s.symbol !== 'CASH_ILS' && s.symbol !== 'CASH_USD' && s.shares > 0 && parseFloat(s.current_value_ils || 0) > 0);
-  const totalActiveValueIls = activeStocks.reduce((sum, s) => sum + parseFloat(s.current_value_ils || 0), 0);
-  const filteredActiveStocks = activeStocks
-    .filter(stock => stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || stock.name.toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => {
-      switch (sortOption) {
-        case 'pct_high': return (parseFloat(b.current_value_ils) / totalActiveValueIls) - (parseFloat(a.current_value_ils) / totalActiveValueIls);
-        case 'pct_low': return (parseFloat(a.current_value_ils) / totalActiveValueIls) - (parseFloat(b.current_value_ils) / totalActiveValueIls);
-        case 'ils_high': return parseFloat(b.current_value_ils) - parseFloat(a.current_value_ils);
-        case 'ils_low': return parseFloat(a.current_value_ils) - parseFloat(b.current_value_ils);
-        case 'return_high': return parseFloat(b.unrealized_pl_percent) - parseFloat(a.unrealized_pl_percent);
-        case 'return_low': return parseFloat(a.unrealized_pl_percent) - parseFloat(b.unrealized_pl_percent);
-        default: return 0;
-      }
-    });
+  const handleBuy = e => {
+    e.preventDefault();
+    const symbol = buySymbol.trim().toUpperCase();
+    const shares = positiveNumber(buyShares);
+    const price = positiveNumber(buyPrice);
+    if (!/^[A-Z0-9][A-Z0-9.^=-]{0,19}$/.test(symbol) || symbol.startsWith('CASH_') || shares === null || price === null || !validTransactionDate(buyDate)) {
+      showToast('יש להזין סימול תקין, כמות ומחיר חיוביים ותאריך שאינו בעתיד', 'error'); return;
+    }
+    saveTransaction('POST', { investment_id: investmentId, symbol, shares, currency: buyCurrency, purchase_price_fc: price, purchase_date: format(buyDate, 'yyyy-MM-dd') }, 'מניה נוספה בהצלחה!', () => { setIsBuyModalOpen(false); setBuySymbol(''); setBuyShares(''); setBuyPrice(''); });
+  };
+
+  const handleSell = e => {
+    e.preventDefault();
+    const shares = positiveNumber(sellShares);
+    const price = positiveNumber(sellPrice);
+    if (!selectedStock || shares === null || shares > numberOrZero(selectedStock.shares) || price === null || !validTransactionDate(sellDate, selectedStock.purchase_date)) {
+      showToast('יש להזין כמות עד יתרת ההחזקה, מחיר חיובי ותאריך מכירה תקין', 'error'); return;
+    }
+    saveTransaction('PUT', { id: selectedStock.id, sale_price_fc: price, sale_shares: shares, sale_date: format(sellDate, 'yyyy-MM-dd') }, 'מניה נמכרה בהצלחה!', () => { setIsSellModalOpen(false); setSellPrice(''); setSellShares(''); });
+  };
+
+  const cashStocks = stocks.filter(s => s.status === 'active' && String(s.symbol || '').startsWith('CASH_'));
+  const activeStocks = stocks.filter(s => s.status === 'active' && !String(s.symbol || '').startsWith('CASH_') && numberOrZero(s.shares) > 0);
+  const filteredActiveStocks = filterAndSortHoldings(activeStocks, searchTerm, sortOption);
   const soldStocks = stocks.filter(s => s.status === 'sold');
-
-  const totalPurchaseIls = activeStocks.reduce((sum, s) => sum + parseFloat(s.purchase_price_ils), 0);
-  const totalUnrealizedPl = activeStocks.reduce((sum, s) => sum + parseFloat(s.unrealized_pl_ils), 0);
-  const totalRealizedPl = soldStocks.reduce((sum, s) => sum + parseFloat(s.realized_pl_ils), 0);
-
-  const formatMoney = (val, currency = 'ILS') => {
-    const num = parseFloat(val || 0);
-    const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(num));
-    const sym = currency === 'ILS' ? '₪' : '$';
-    return `${num < 0 ? '-' : ''}${sym}${formatted}`;
-  };
+  const totalRealizedPl = soldStocks.reduce((sum, s) => sum + numberOrZero(s.realized_pl_ils), 0);
+  const formatMoney = formatPortfolioMoney;
+  const formatPercent = value => numberOrNull(value) === null ? '—' : `${numberOrZero(value).toFixed(2)}%`;
 
   // Charts Setup
   const historyChartData = {
@@ -285,20 +318,20 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     return sectors[symbol] || 'אחר';
   };
 
-  let allocationLabels = [];
-  let allocationData = [];
+  let allocationLabels;
+  let allocationData;
 
   if (allocationView === 'stock') {
-    allocationLabels = [...cashStocks.map(s => s.symbol === 'CASH_ILS' ? 'מזומן ₪' : 'מזומן $'), ...activeStocks.map(s => s.symbol)];
-    allocationData = [...cashStocks.map(s => s.current_value_ils), ...activeStocks.map(s => s.current_value_ils)];
+    allocationLabels = [...cashStocks.map(s => `מזומן ${s.currency || String(s.symbol).replace('CASH_', '')}`), ...activeStocks.map(s => s.symbol)];
+    allocationData = [...cashStocks.map(s => Math.max(0, numberOrZero(s.current_value_ils))), ...activeStocks.map(s => Math.max(0, numberOrZero(s.current_value_ils)))];
   } else {
     const sectorTotals = {};
     cashStocks.forEach(s => {
-      sectorTotals['מזומן'] = (sectorTotals['מזומן'] || 0) + parseFloat(s.current_value_ils);
+      sectorTotals['מזומן'] = (sectorTotals['מזומן'] || 0) + Math.max(0, numberOrZero(s.current_value_ils));
     });
     activeStocks.forEach(s => {
       const sector = getSector(s.symbol);
-      sectorTotals[sector] = (sectorTotals[sector] || 0) + parseFloat(s.current_value_ils);
+      sectorTotals[sector] = (sectorTotals[sector] || 0) + Math.max(0, numberOrZero(s.current_value_ils));
     });
     allocationLabels = Object.keys(sectorTotals).sort((a, b) => sectorTotals[b] - sectorTotals[a]);
     allocationData = allocationLabels.map(sec => sectorTotals[sec]);
@@ -310,7 +343,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     labels: allocationLabels,
     datasets: [{
       data: allocationData,
-      backgroundColor: pieColors.slice(0, Math.max(allocationData.length, pieColors.length)),
+      backgroundColor: allocationData.map((_, index) => pieColors[index % pieColors.length]),
       borderWidth: 0,
       hoverOffset: 4
     }]
@@ -328,7 +361,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
              if (context.parsed !== null) {
                 label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'ILS' }).format(context.parsed);
                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const percentage = ((context.parsed * 100) / total).toFixed(1) + '%';
+                const percentage = (total > 0 ? (context.parsed * 100) / total : 0).toFixed(1) + '%';
                 label += ` (${percentage})`;
              }
              return label;
@@ -339,21 +372,30 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
     cutout: '65%'
   };
 
-  if (loading && stocks.length === 0) return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-main)' }}>טוען נתונים...</div>;
+  if (loadedInvestmentId !== investmentId) return (
+    <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }} role="status">
+      <button className="btn-secondary" onClick={onBack}>חזרה</button>
+      <p>{portfolioError || 'טוען נתוני תיק...'}</p>
+      {portfolioError && <button className="btn-primary" onClick={fetchPortfolio} disabled={loading}>נסה שוב</button>}
+    </div>
+  );
 
   return (
     <div style={{ paddingBottom: '80px', display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center' }}>
          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start' }}>
-           <button onClick={onBack} className="btn-secondary" style={{ padding: '0.5rem' }}>
+           <button aria-label="חזרה לרשימת ההשקעות" onClick={onBack} className="btn-secondary" style={{ padding: '0.5rem' }}>
               <ArrowRight size={20} />
            </button>
          </div>
          <h1 style={{ margin: 0, fontSize: '1.5rem', color: 'var(--text-main)', textAlign: 'center' }}>{investmentName}</h1>
-         <div style={{ flex: 1 }}></div>
+         <button className="btn-secondary" onClick={fetchPortfolio} disabled={loading || saving}>{loading ? 'מרענן...' : 'רענון'}</button>
       </div>
 
+      {portfolioError && <div role="alert" className="glass-card" style={{ padding: '1rem', color: 'var(--expense)' }}>הרענון נכשל: {portfolioError}. מוצגים הנתונים האחרונים שהתקבלו.</div>}
+      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>נתונים התקבלו: {retrievedAt?.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}. מועד קבלת הנתונים אינו מועד עדכון מחירי השוק.</div>
+      {valuationWarnings.length > 0 && <div role="status" className="glass-card" style={{ padding: '1rem' }}>חלק מהמחירים הם אומדנים שמורים: {valuationWarnings.map(item => typeof item === 'string' ? item : item.symbol || item.message || 'מחיר לא זמין').join(', ')}</div>}
       {/* Summary Card */}
       <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(37,99,235,0.1) 100%)' }}>
         <div style={{ textAlign: 'center' }}>
@@ -392,6 +434,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
         </div>
       </div>
 
+      {totalDeposited <= 0 && <button className="btn-secondary" onClick={() => { setDepositMode('add'); setIsDepositModalOpen(true); }}>עדכון הפקדות</button>}
       {/* Action Button */}
       <button className="btn-primary" onClick={() => setIsBuyModalOpen(true)} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', padding: '1rem' }}>
         <PlusCircle size={20} />
@@ -399,33 +442,42 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       </button>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.8)', padding: '0.35rem', borderRadius: '1rem', marginBottom: '0.5rem', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
+      <div role="tablist" aria-label="תצוגות תיק ההשקעות" style={{ display: 'flex', gap: '0.25rem', background: 'rgba(255, 255, 255, 0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.8)', padding: '0.35rem', borderRadius: '1rem', marginBottom: '0.5rem', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
         <button 
+          role="tab" aria-selected={activeTab === 'portfolio'}
           onClick={() => setActiveTab('portfolio')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'portfolio' ? 'var(--accent)' : 'transparent', color: activeTab === 'portfolio' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'portfolio' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'portfolio' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
+          style={{ flex: 1, minWidth: 0, padding: '0.75rem 0.2rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'portfolio' ? 'var(--accent)' : 'transparent', color: activeTab === 'portfolio' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'portfolio' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'portfolio' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <Wallet size={16} /> התיק
         </button>
         <button 
+          role="tab" aria-selected={activeTab === 'history'}
           onClick={() => setActiveTab('history')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'history' ? 'var(--accent)' : 'transparent', color: activeTab === 'history' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'history' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'history' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
+          style={{ flex: 1, minWidth: 0, padding: '0.75rem 0.2rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'history' ? 'var(--accent)' : 'transparent', color: activeTab === 'history' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'history' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'history' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <LineChart size={16} /> מגמה
         </button>
         <button 
+          role="tab" aria-selected={activeTab === 'allocation'}
           onClick={() => setActiveTab('allocation')} 
-          style={{ flex: 1, padding: '0.75rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'allocation' ? 'var(--accent)' : 'transparent', color: activeTab === 'allocation' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'allocation' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'allocation' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
+          style={{ flex: 1, minWidth: 0, padding: '0.75rem 0.2rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'allocation' ? 'var(--accent)' : 'transparent', color: activeTab === 'allocation' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'allocation' ? 'bold' : '500', transition: 'all 0.3s ease', boxShadow: activeTab === 'allocation' ? '0 4px 12px rgba(59,130,246,0.25)' : 'none' }}>
           <PieChart size={16} /> פיזור
+        </button>
+        <button
+          role="tab" aria-selected={activeTab === 'research'}
+          onClick={() => setActiveTab('research')}
+          style={{ flex: 1, minWidth: 0, padding: '0.75rem 0.2rem', borderRadius: '0.75rem', border: 'none', background: activeTab === 'research' ? 'var(--accent)' : 'transparent', color: activeTab === 'research' ? 'white' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: activeTab === 'research' ? 'bold' : '500', transition: 'all 0.3s ease' }}>
+          <Newspaper size={16} /> מחקר
         </button>
       </div>
 
       {activeTab === 'history' && (
          <div className="glass-card" style={{ padding: '1.5rem', minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1.5rem' }}>היסטוריית שווי התיק</h2>
-            {historyLoading ? (
+            {historyLoading || historyInvestmentId !== investmentId ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>טוען נתונים...</div>
-            ) : historyData.length > 0 ? (
+            ) : historyError ? (<div role="alert"><p>{historyError}</p><button className="btn-secondary" onClick={fetchHistory}>נסה שוב</button></div>) : historyData.length > 0 ? (
               <Line options={historyChartOptions} data={historyChartData} />
             ) : (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>תהיה היסטוריה להציג החל ממחר.</div>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>אין עדיין נתוני היסטוריה לתיק הזה.</div>
             )}
          </div>
       )}
@@ -459,7 +511,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
               </div>
             </div>
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, marginBottom: '1.25rem', width: '100%', textAlign: 'right' }}>התפלגות נכסים</h2>
-            {allocationData.length > 0 ? (
+            {allocationData.some(value => value > 0) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2rem' }}>
                 <div style={{ width: '100%', maxWidth: '300px' }}>
                   <Doughnut options={allocationChartOptions} data={allocationChartData} />
@@ -511,12 +563,12 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                      {cashStocks.map(stock => (
                         <div key={stock.id} className="glass-card" style={{ padding: '1.5rem', textAlign: 'center', borderTop: stock.symbol === 'CASH_USD' ? '4px solid #10b981' : '4px solid #3b82f6' }}>
                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                              {stock.symbol === 'CASH_ILS' ? 'שקלים (ILS)' : 'דולרים (USD)'}
+                              {`מזומן (${stock.currency || String(stock.symbol).replace('CASH_', '')})`}
                            </div>
                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
-                              {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.symbol === 'CASH_ILS' ? 'ILS' : 'USD' }).format(stock.shares)}
+                              {formatMoney(stock.shares, stock.currency || String(stock.symbol).replace('CASH_', ''))}
                            </div>
-                           {stock.symbol === 'CASH_USD' && (
+                           {stock.symbol !== 'CASH_ILS' && (
                               <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                                  ≈ {formatMoney(stock.current_value_ils)}
                               </div>
@@ -533,6 +585,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>החזקות פעילות ({activeStocks.length})</h2>
                   <input 
                      type="text" 
+                     aria-label="חיפוש החזקות לפי סימול או שם חברה"
                      placeholder="חיפוש לפי טיקר או שם חברה..." 
                      value={searchTerm}
                      onChange={(e) => setSearchTerm(e.target.value)}
@@ -541,6 +594,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                      <ArrowUpDown size={16} color="var(--text-muted)" />
                      <select
+                        aria-label="מיון החזקות"
                         value={sortOption}
                         onChange={(e) => setSortOption(e.target.value)}
                         style={{
@@ -576,16 +630,18 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                            <div>
                               <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol}</div>
-                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{stock.name}</div>
+                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{stock.name || 'שם חברה לא זמין'}</div>
+                              {stock.valuation_status && stock.valuation_status === 'stored_estimate' && <div style={{ fontSize: '0.75rem', color: 'var(--expense)' }}>מחיר משוער • נדרש אימות</div>}
                               <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{parseFloat(stock.shares)} מניות</div>
                            </div>
                            <div style={{ textAlign: 'left' }}>
                               <div style={{ fontSize: '1.125rem', fontWeight: 'bold', color: 'var(--text-main)' }} dir="ltr">
-                                 {new Intl.NumberFormat('en-US', { style: 'currency', currency: stock.currency }).format(stock.current_price_fc)}
+                                 {formatMoney(stock.current_price_fc, stock.currency)}
                               </div>
+                              {stock.current_quote_time && Number.isFinite(new Date(stock.current_quote_time).getTime()) && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>מחיר שוק: {new Date(stock.current_quote_time).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}</div>}
                               <div style={{ fontSize: '0.875rem', fontWeight: 'bold', color: stock.day_change_percent >= 0 ? 'var(--income)' : 'var(--expense)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem' }} dir="ltr">
                                  {stock.day_change_percent >= 0 ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
-                                 {parseFloat(stock.day_change_percent).toFixed(2)}%
+                                 {stock.valuation_status === 'stored_estimate' ? '—' : formatPercent(stock.day_change_percent)}
                               </div>
                            </div>
                         </div>
@@ -601,11 +657,11 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                                  {stock.unrealized_pl_fc >= 0 ? '+' : ''}{formatMoney(stock.unrealized_pl_fc, stock.currency)}
                               </div>
                               <div style={{ fontSize: '0.75rem', color: stock.unrealized_pl_percent >= 0 ? 'var(--income)' : 'var(--expense)' }} dir="ltr">
-                                 ({stock.unrealized_pl_percent >= 0 ? '+' : ''}{parseFloat(stock.unrealized_pl_percent).toFixed(2)}%)
+                                 ({stock.unrealized_pl_percent >= 0 ? '+' : ''}{formatPercent(stock.unrealized_pl_percent)})
                               </div>
                            </div>
                            <button 
-                              onClick={() => { setSelectedStock(stock); setIsSellModalOpen(true); }}
+                              onClick={() => { setSelectedStock(stock); setSellShares(String(stock.shares)); setSellPrice(''); setSellDate(new Date()); setIsSellModalOpen(true); }}
                               style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.4rem 1rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                            >
                               מכירה
@@ -613,29 +669,32 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                         </div>
                      </div>
                   ))}
-                  {filteredActiveStocks.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>לא נמצאו החזקות פעילות שמתאימות לחיפוש.</div>}
+                  {filteredActiveStocks.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{activeStocks.length === 0 ? 'אין החזקות פעילות בתיק. אפשר לרשום קנייה חדשה.' : 'לא נמצאו החזקות שמתאימות לחיפוש.'}</div>}
                </div>
             </div>
 
             {/* Sold Stocks */}
             {soldStocks.length > 0 && (
                <div style={{ marginTop: '1rem' }}>
-                  <div 
+                  <button
+                     type="button"
+                     aria-expanded={isSoldStocksOpen}
+                     className="btn-secondary"
                      onClick={() => setIsSoldStocksOpen(!isSoldStocksOpen)} 
                      style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.5rem', marginBottom: '1rem' }}
                   >
                      {isSoldStocksOpen ? <ChevronDown size={20} color="var(--text-main)" /> : <ChevronRight size={20} color="var(--text-main)" />}
                      <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0 }}>היסטוריית עסקאות (מניות שנמכרו)</h2>
-                  </div>
+                  </button>
                   {isSoldStocksOpen && (
                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {soldStocks.map(stock => (
                            <div key={stock.id} className="glass-card" style={{ padding: '1rem', opacity: 0.8 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                  <div>
-                                    <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{stock.symbol.replace('_SOLD', '')}</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{stock.name}</div>
-                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>נמכר ב-{format(new Date(stock.sale_date), 'dd/MM/yyyy')}</div>
+                                    <div style={{ fontWeight: 'bold', color: 'var(--text-main)' }}>{String(stock.symbol || '').replace('_SOLD', '')}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{stock.name || 'שם חברה לא זמין'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>נמכר ב-{(Number.isFinite(new Date(stock.sale_date).getTime()) ? format(new Date(stock.sale_date), 'dd/MM/yyyy') : 'תאריך לא זמין')}</div>
                                  </div>
                                  <div style={{ textAlign: 'left' }}>
                                     <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>רווח ממומש</div>
@@ -653,11 +712,13 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
          </>
       )}
 
+      {activeTab === 'research' && <StockResearchPanel stocks={stocks} />}
+
       {/* Modals */}
       {isBuyModalOpen && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ position: 'relative' }}>
-            <button onClick={() => setIsBuyModalOpen(false)} style={{
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="עדכון תיק ההשקעות" className="modal-content glass-card" style={{ position: 'relative' }}>
+            <button aria-label="סגירת חלון" disabled={saving} onClick={() => setIsBuyModalOpen(false)} style={{
               position: 'absolute', top: '1rem', left: '1rem',
               background: 'transparent', border: 'none', cursor: 'pointer',
               fontSize: '1.5rem', lineHeight: 1, color: 'var(--text-muted)',
@@ -668,21 +729,21 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
             </div>
             <form onSubmit={handleBuy} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label>סימול מניה (למשל AAPL)</label>
-                <input type="text" value={buySymbol} onChange={e => setBuySymbol(e.target.value)} required dir="ltr" />
+                <label htmlFor="buy-symbol">סימול מניה (למשל AAPL)</label>
+                <input id="buy-symbol" type="text" value={buySymbol} onChange={e => setBuySymbol(e.target.value)} required dir="ltr" />
               </div>
               <div>
-                <label>כמות מניות</label>
-                <input type="number" step="any" value={buyShares} onChange={e => setBuyShares(e.target.value)} required dir="ltr" />
+                <label htmlFor="buy-shares">כמות מניות</label>
+                <input id="buy-shares" type="number" min="0.00000001" step="any" value={buyShares} onChange={e => setBuyShares(e.target.value)} required dir="ltr" />
               </div>
               <div style={{ display: 'flex', gap: '1rem' }}>
                  <div style={{ flex: 1 }}>
-                   <label>מחיר קנייה</label>
-                   <input type="number" step="any" value={buyPrice} onChange={e => setBuyPrice(e.target.value)} required dir="ltr" />
+                   <label htmlFor="buy-price">מחיר קנייה</label>
+                   <input id="buy-price" type="number" min="0.00000001" step="any" value={buyPrice} onChange={e => setBuyPrice(e.target.value)} required dir="ltr" />
                  </div>
                  <div style={{ width: '80px' }}>
-                   <label>מטבע</label>
-                   <select value={buyCurrency} onChange={e => setBuyCurrency(e.target.value)} dir="ltr">
+                   <label htmlFor="buy-currency">מטבע</label>
+                   <select id="buy-currency" value={buyCurrency} onChange={e => setBuyCurrency(e.target.value)} dir="ltr">
                       <option value="USD">USD</option>
                       <option value="ILS">ILS</option>
                       <option value="EUR">EUR</option>
@@ -690,9 +751,11 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                  </div>
               </div>
               <div>
-                 <label>תאריך קנייה</label>
+                 <label htmlFor="buy-date">תאריך קנייה</label>
                   <DatePicker
+                     id="buy-date"
                      selected={buyDate}
+                     maxDate={new Date()}
                      onChange={date => setBuyDate(date)}
                      locale={he}
                      dateFormat="dd/MM/yyyy"
@@ -701,7 +764,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                      portalId="root-portal"
                   />
               </div>
-              <button type="submit" className="btn-primary" style={{ marginTop: '1rem' }}>הוסף לתיק</button>
+              <button type="submit" disabled={saving} className="btn-primary" style={{ marginTop: '1rem' }}>הוסף לתיק</button>
             </form>
           </div>
         </div>
@@ -709,8 +772,8 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
       {isSellModalOpen && selectedStock && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ position: 'relative' }}>
-            <button onClick={() => setIsSellModalOpen(false)} style={{
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="עדכון תיק ההשקעות" className="modal-content glass-card" style={{ position: 'relative' }}>
+            <button aria-label="סגירת חלון" disabled={saving} onClick={() => setIsSellModalOpen(false)} style={{
               position: 'absolute', top: '1rem', left: '1rem',
               background: 'transparent', border: 'none', cursor: 'pointer',
               fontSize: '1.5rem', lineHeight: 1, color: 'var(--text-muted)',
@@ -721,17 +784,20 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
             </div>
             <form onSubmit={handleSell} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label>כמות למכירה (מתוך {selectedStock.shares})</label>
-                <input type="number" step="any" max={selectedStock.shares} value={sellShares} onChange={e => setSellShares(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} placeholder={selectedStock.shares} />
+                <label htmlFor="sell-shares">כמות למכירה (מתוך {selectedStock.shares})</label>
+                <input id="sell-shares" type="number" min="0.00000001" step="any" max={selectedStock.shares} value={sellShares} onChange={e => setSellShares(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} placeholder={selectedStock.shares} />
               </div>
               <div>
-                <label>מחיר מכירה במטבע ({selectedStock.currency})</label>
-                <input type="number" step="any" value={sellPrice} onChange={e => setSellPrice(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} />
+                <label htmlFor="sell-price">מחיר מכירה במטבע ({selectedStock.currency})</label>
+                <input id="sell-price" type="number" min="0.00000001" step="any" value={sellPrice} onChange={e => setSellPrice(e.target.value)} required dir="rtl" style={{ textAlign: 'right', direction: 'rtl' }} />
               </div>
               <div>
-                 <label>תאריך מכירה</label>
+                 <label htmlFor="sell-date">תאריך מכירה</label>
                  <DatePicker
+                    id="sell-date"
                     selected={sellDate}
+                    maxDate={new Date()}
+                    minDate={selectedStock.purchase_date ? new Date(selectedStock.purchase_date) : undefined}
                     onChange={date => setSellDate(date)}
                     locale={he}
                     dateFormat="dd/MM/yyyy"
@@ -740,7 +806,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                     portalId="root-portal"
                  />
               </div>
-              <button type="submit" className="btn-primary" style={{ marginTop: '1rem', background: 'var(--expense)' }}>
+              <button type="submit" disabled={saving} className="btn-primary" style={{ marginTop: '1rem', background: 'var(--expense)' }}>
                  בצע מכירה
               </button>
             </form>
@@ -751,8 +817,8 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
       {/* Deposit Modal */}
       {isDepositModalOpen && (
         <div className="modal-overlay">
-          <div className="modal-content glass-card" style={{ position: 'relative' }}>
-            <button onClick={() => setIsDepositModalOpen(false)} style={{
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="עדכון תיק ההשקעות" className="modal-content glass-card" style={{ position: 'relative' }}>
+            <button aria-label="סגירת חלון" disabled={saving} onClick={() => setIsDepositModalOpen(false)} style={{
               position: 'absolute', top: '1rem', left: '1rem',
               background: 'transparent', border: 'none', cursor: 'pointer',
               fontSize: '1.5rem', lineHeight: 1, color: 'var(--text-muted)', padding: '0.25rem', zIndex: 10
@@ -775,20 +841,20 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
 
             <form onSubmit={handleDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label style={{ marginBottom: '0.4rem', display: 'block' }}>
+                <label htmlFor="deposit-amount" style={{ marginBottom: '0.4rem', display: 'block' }}>
                   {depositMode === 'add' ? 'סכום ההפקדה החדשה (₪)' : `סכום כולל חדש (₪) — נוכחי: ${totalDeposited.toLocaleString()} ₪`}
                 </label>
                 <input
+                  id="deposit-amount"
                   type="number"
                   step="any"
-                  min="1"
+                  min="0.00000001"
                   placeholder={depositMode === 'add' ? 'לדוגמה: 10000' : `לדוגמה: ${totalDeposited}`}
                   value={depositAmount}
                   onChange={e => setDepositAmount(e.target.value)}
                   required
                   dir="rtl"
                   style={{ textAlign: 'right', direction: 'rtl' }}
-                  autoFocus
                 />
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(59,130,246,0.07)', padding: '0.75rem', borderRadius: '0.5rem' }}>
@@ -797,7 +863,7 @@ export default function PortfolioView({ investmentId, investmentName, onBack, sh
                   : `הסכום שתזין יחליף את הסכום הנוכחי (${formatMoney(totalDeposited)})`
                 }
               </div>
-              <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }}>
+              <button type="submit" disabled={saving} className="btn-primary" style={{ marginTop: '0.5rem' }}>
                 אישור עדכון
               </button>
             </form>

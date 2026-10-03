@@ -1,0 +1,24 @@
+.stock-research { padding: 1.25rem; }
+.research-heading { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.research-eyebrow { color: var(--accent); font-size: .75rem; font-weight: 600; }
+.research-heading h2 { display: flex; gap: .5rem; align-items: center; font-size: 1.15rem; margin: .3rem 0; }
+.research-refresh { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; }
+.research-intro, .research-policy, .research-date { color: var(--text-muted); font-size: .85rem; line-height: 1.7; margin-top: .7rem; }
+.research-policy { border-inline-start: 3px solid var(--accent); padding-inline-start: .75rem; }
+.research-notice { padding: .75rem; margin-top: .75rem; border-radius: 10px; background: var(--bg-main); line-height: 1.6; font-size: .9rem; }
+.research-results { display: grid; gap: .75rem; margin-top: 1rem; }
+.research-result { border: 1px solid var(--border-color); padding: 1rem; border-radius: 12px; min-width: 0; }
+.research-result-title { display: flex; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; }
+.research-result-title span, .research-result p { color: var(--text-muted); font-size: .8rem; }
+.research-suggestion { border-radius: 8px; background: var(--bg-main); padding: .8rem; margin: .6rem 0; font-size: .85rem; line-height: 1.7; }
+.research-suggestion strong { color: var(--accent); }
+.research-suggestion a { color: var(--accent); }
+.research-suggestion details { margin-top: .6rem; }
+.research-suggestion summary { cursor: pointer; min-height: 32px; }
+.research-suggestion ul { padding-inline-start: 1rem; }
+.research-article { padding: .65rem 0; border-top: 1px solid var(--border-color); }
+.research-article a { display: flex; align-items: baseline; gap: .4rem; color: var(--text-main); font-size: .9rem; line-height: 1.65; text-decoration: none; overflow-wrap: anywhere; }
+.research-article a:hover { color: var(--accent); text-decoration: underline; }
+.research-article a svg { flex-shrink: 0; }
+.research-article span { display: block; color: var(--text-muted); font-size: .75rem; margin-top: .25rem; }
+@media (max-width: 420px) { .stock-research { padding: 1rem; } .research-refresh { width: 100%; justify-content: center; } }

@@ -1,19 +1,20 @@
+import { requireAuth } from './_lib/auth.mjs';
 import { Client } from 'pg';
 import webpush from 'web-push';
 
 const connectionString = process.env.DATABASE_URL;
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
-  process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BIM0xAWO_Q74HlZtHNUhyQIv94Lf3OX3XjMXO8c7sRuJVdgmwc874tsNgjsYuWByrICnC_0PS0GJN-rP0w1uiCg',
-  process.env.VAPID_PRIVATE_KEY || '4vyeT_COryu8ilf5YXpS2zsNjCXgzYWm3rrNXeL09mw'
-);
+
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return res.status(503).json({ error: 'Push notifications are not configured' });
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
   const client = new Client({ connectionString });
 
   try {
@@ -32,7 +33,7 @@ export default async function handler(req, res) {
 
     for (const sub of subscriptions) {
       try {
-        await webpush.sendNotification(sub, JSON.stringify({
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, JSON.stringify({
           title,
           body
         }));
@@ -58,7 +59,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Test Push Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: 'Test notification failed' });
   } finally {
     await client.end();
   }

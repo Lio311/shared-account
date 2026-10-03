@@ -1,0 +1,63 @@
+name: Stock research scan
+
+on:
+  schedule:
+    # UTC: 00:17, 08:17, 16:17; avoid the busiest minute of each hour.
+    - cron: '17 */8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-research-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run authenticated scan
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$CRON_SECRET" ]]; then
+            echo '::error::Repository secret CRON_SECRET is missing; no request was sent.'
+            exit 1
+          fi
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          if ! http_status="$(curl --silent --show-error --connect-timeout 15 --max-time 100 \
+            --request POST \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header 'Accept: application/json' \
+            --output "$response_file" --write-out '%{http_code}' \
+            'https://shared-account.vercel.app/api/stock-research')"; then
+            echo '::error::The research endpoint could not be reached.'
+            exit 1
+          fi
+          if [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Research endpoint returned HTTP $http_status. Response contents withheld."
+            exit 1
+          fi
+          python3 - "$response_file" <<'PY'
+          import json, sys
+          try:
+              with open(sys.argv[1], encoding='utf-8') as stream:
+                  result = json.load(stream)
+          except (ValueError, OSError):
+              print('::error::Research endpoint returned invalid JSON. Response contents withheld.')
+              sys.exit(1)
+          if not isinstance(result, dict) or result.get('success') is not True or result.get('error') or result.get('status') == 'error':
+              print('::error::Research endpoint did not report success. Response contents withheld.')
+              sys.exit(1)
+          if result.get('incomplete'):
+              print('::warning::Scan completed with incomplete source coverage; review the authenticated report.')
+          notification = result.get('notification')
+          if isinstance(notification, dict) and (notification.get('failed') or notification.get('unavailable')):
+              print('::warning::Report saved, but notifications are unavailable or partially failed.')
+          print('Research endpoint confirmed success. Financial response contents withheld.')
+          PY

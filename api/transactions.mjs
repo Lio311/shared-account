@@ -1,15 +1,22 @@
+import { requireAuth } from './_lib/auth.mjs';
 import { Client } from 'pg';
+import { HttpError, bodyObject, finiteNumber, positiveId, requiredText, validDate, performedBy as getPerformedBy, closeClient } from './_lib/validation.mjs';
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
   });
 
-  const rawPerformedBy = req.headers['x-performed-by'] || 'מערכת';
-  const performedBy = decodeURIComponent(rawPerformedBy);
+  const performedBy = getPerformedBy(req);
 
+  let inTransaction = false;
   try {
+    if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return res.status(405).send('Method Not Allowed');
+    if (['POST', 'PUT'].includes(req.method)) req.body = bodyObject(req.body);
     await client.connect();
+    if (req.method !== 'GET') { await client.query('BEGIN'); inTransaction = true; }
 
     if (req.method === 'GET') {
       const result = await client.query(
@@ -19,8 +26,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      const { amount, description, category, type, date, project_id } = body;
+      const body = bodyObject(req.body);
+      const { amount, description, category, type, date, project_id } = validateTransaction(body);
       const txDate = date ? new Date(date).toISOString() : new Date().toISOString();
       const result = await client.query(
         'INSERT INTO transactions (date, amount, description, category, type, project_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
@@ -51,18 +58,21 @@ export default async function handler(req, res) {
         }
       }
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(201).json(returnTx);
     }
 
     if (req.method === 'PUT') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      const { id, amount, description, category, type, date, project_id } = body;
+      const body = bodyObject(req.body);
+      const id = positiveId(body.id);
+      const { amount, description, category, type, date, project_id } = validateTransaction(body);
       if (!id) {
         return res.status(400).send('Missing transaction ID');
       }
 
       const oldResult = await client.query('SELECT * FROM transactions WHERE id = $1', [id]);
       const oldTx = oldResult.rows[0];
+      if (!oldTx) throw new HttpError(404, 'Transaction not found');
 
       const txDate = date ? new Date(date).toISOString() : new Date().toISOString();
       const result = await client.query(
@@ -104,17 +114,19 @@ export default async function handler(req, res) {
         }
       }
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(200).json(returnTx);
     }
 
     if (req.method === 'DELETE') {
-      const id = req.query.id;
+      const id = positiveId(req.query?.id);
       if (!id) {
         return res.status(400).send('Missing transaction ID');
       }
 
       const oldResult = await client.query('SELECT * FROM transactions WHERE id = $1', [id]);
       const oldTx = oldResult.rows[0];
+      if (!oldTx) throw new HttpError(404, 'Transaction not found');
 
       await client.query('DELETE FROM transactions WHERE id = $1', [id]);
 
@@ -127,14 +139,26 @@ export default async function handler(req, res) {
         );
       }
 
+      await client.query('COMMIT'); inTransaction = false;
       return res.status(200).json({ success: true });
     }
 
     return res.status(405).send('Method Not Allowed');
   } catch (error) {
     console.error('Database Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Operation failed' });
   } finally {
-    await client.end();
+    if (inTransaction) { try { await client.query('ROLLBACK'); } catch { /* Connection may already be closed. */ } }
+    await closeClient(client);
   }
+}
+
+function validateTransaction(body) {
+  const amount = finiteNumber(body.amount, 'amount', { exclusive: true });
+  const description = requiredText(body.description, 'description');
+  const category = requiredText(body.category, 'category');
+  if (!['income', 'expense'].includes(body.type)) throw new HttpError(400, 'Invalid transaction type');
+  const date = body.date ? validDate(body.date) : new Date().toISOString();
+  const project_id = body.project_id ? positiveId(body.project_id, 'project_id') : null;
+  return { amount, description, category, type: body.type, date, project_id };
 }

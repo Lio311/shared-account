@@ -1,9 +1,12 @@
+import { requireAuth } from './_lib/auth.mjs';
 export default function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') {
     return res.status(405).send('Method Not Allowed');
   }
   
-  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BIM0xAWO_Q74HlZtHNUhyQIv94Lf3OX3XjMXO8c7sRuJVdgmwc874tsNgjsYuWByrICnC_0PS0GJN-rP0w1uiCg';
-  
-  res.status(200).json({ publicKey });
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  if (!publicKey) return res.status(503).json({ error: 'Push notifications are not configured' });
+  return res.status(200).json({ publicKey });
 }

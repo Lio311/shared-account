@@ -25,3 +25,11 @@ dist-ssr
 
 # Vercel folder
 .vercel
+
+# Private source data and local credentials
+private-data/
+.env*
+!.env.example
+*.xlsx
+/temp_ledger.csv
+/import.sql

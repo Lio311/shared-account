@@ -1,6 +1,11 @@
+import { requireAuth } from '../_lib/auth.mjs';
 import { Client } from 'pg';
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (req.method !== 'GET') return res.status(405).send('Method Not Allowed');
   let filename = req.query.filename;
   if (!filename) {
     const parts = req.url.split('?')[0].split('/');
@@ -30,7 +35,7 @@ export default async function handler(req, res) {
     return res.status(200).send(fileBuffer);
   } catch (err) {
     console.error('Payslips serving error:', err);
-    return res.status(500).send(err.message);
+    return res.status(500).send('Unable to load payslip');
   } finally {
     await client.end();
   }

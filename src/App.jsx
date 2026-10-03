@@ -4,6 +4,12 @@ import { he } from 'date-fns/locale';
 import 'react-datepicker/dist/react-datepicker.css';
 
 registerLocale('he', he);
+const HEBREW_MONTHS = [
+    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
+  ];
+
+
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,8 +23,10 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
-import { PlusCircle, Receipt, X, Home, BarChart3, History, Wallet, TrendingDown, Lock, Eye, EyeOff, FileText, Pencil, Trash2, ChevronLeft, ChevronRight, ClipboardList, Briefcase, Coins, Bell } from 'lucide-react';
+import { PlusCircle, X, Home, BarChart3, History, Wallet, TrendingDown, Lock, Eye, FileText, Pencil, Trash2, ChevronLeft, ChevronRight, ClipboardList, Briefcase, Coins, Bell } from 'lucide-react';
 import PortfolioView from './PortfolioView';
+import StockResearchPanel from './StockResearchPanel';
+import { authenticatedFetch, loadDashboardData } from './dashboardData.mjs';
 
 ChartJS.register(
   CategoryScale,
@@ -32,8 +40,9 @@ ChartJS.register(
   Legend
 );
 
-const CustomDateInput = React.forwardRef(({ value, onClick, placeholder }, ref) => (
+const CustomDateInput = React.forwardRef(({ value, onClick, placeholder, ...inputProps }, ref) => (
   <input
+    {...inputProps}
     value={value}
     onClick={onClick}
     ref={ref}
@@ -44,76 +53,96 @@ const CustomDateInput = React.forwardRef(({ value, onClick, placeholder }, ref) 
 ));
 CustomDateInput.displayName = 'CustomDateInput';
 
-const PIN_CODE_BEN = '3197';
-const PIN_CODE_BAT = '5467';
+// Keep modal keyboard navigation inside the open window and return focus on close.
+function DialogFrame({ children, onClose, label, ...props }) {
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const dialog = dialogRef.current;
+    const focusables = () => [...dialog.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter(element => !element.disabled && element.getClientRects().length > 0);
+    (focusables()[0] || dialog).focus();
+    const handleKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current?.(); }
+      if (event.key !== 'Tab') return;
+      const elements = focusables();
+      if (!elements.length) { event.preventDefault(); dialog.focus(); return; }
+      const first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    dialog.addEventListener('keydown', handleKey);
+    return () => { dialog.removeEventListener('keydown', handleKey); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
+  return <div {...props} ref={dialogRef} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>{children}</div>;
+}
 
 function PinScreen({ onSuccess }) {
   const [pin, setPin] = useState(['', '', '', '']);
-  const [error, setError] = useState(false);
-  const inputRefs = [useRef(), useRef(), useRef(), useRef()];
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const firstInputRef = useRef();
+  const inputRefs = [firstInputRef, useRef(), useRef(), useRef()];
+
+  const submitPin = async code => {
+    if (submittingRef.current || !/^\d{4}$/.test(code)) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setError('');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: code }), signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(response.status === 401 ? 'קוד שגוי, נסו שנית' : response.status === 429 ? 'בוצעו ניסיונות רבים מדי. נסו שוב בעוד מספר דקות.' : 'לא ניתן להתחבר כרגע. נסו שוב.');
+      }
+      const result = await response.json();
+      if (!result.authenticated || !result.person) throw new Error('לא ניתן לאמת את ההתחברות. נסו שוב.');
+      onSuccess(result.person);
+    } catch (err) {
+      setError(err.name === 'AbortError' || err instanceof TypeError ? 'החיבור לשרת לא זמין. בדקו את החיבור ונסו שוב.' : err.message);
+      setPin(['', '', '', '']);
+      setTimeout(() => inputRefs[0].current?.focus(), 0);
+    } finally {
+      clearTimeout(timeout);
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
 
   const handleChange = (index, value) => {
+    if (submittingRef.current) return;
     if (value.length > 1) value = value.slice(-1);
     if (value && !/^\d$/.test(value)) return;
-    
     const newPin = [...pin];
     newPin[index] = value;
     setPin(newPin);
-    setError(false);
-
-    if (value && index < 3) {
-      inputRefs[index + 1].current.focus();
-    }
-
-    // Auto-submit when all 4 digits entered
-    if (value && index === 3) {
-      const code = newPin.join('');
-      if (code === PIN_CODE_BEN) {
-        sessionStorage.setItem('budget_auth', 'true');
-        sessionStorage.setItem('budget_user', 'ליאור הבן');
-        onSuccess('ליאור הבן');
-      } else if (code === PIN_CODE_BAT) {
-        sessionStorage.setItem('budget_auth', 'true');
-        sessionStorage.setItem('budget_user', 'ליאור הבת');
-        onSuccess('ליאור הבת');
-      } else {
-        setError(true);
-        setPin(['', '', '', '']);
-        setTimeout(() => inputRefs[0].current?.focus(), 100);
-      }
-    }
+    setError('');
+    if (value && index < 3) inputRefs[index + 1].current.focus();
+    if (newPin.every(Boolean)) void submitPin(newPin.join(''));
   };
 
   const handleKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !pin[index] && index > 0) {
-      inputRefs[index - 1].current.focus();
-    }
+    if (e.key === 'Backspace' && !pin[index] && index > 0) inputRefs[index - 1].current.focus();
   };
 
-  const handlePaste = (e) => {
+  const handlePaste = e => {
     e.preventDefault();
+    if (submittingRef.current) return;
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
-    if (pasted.length === 4) {
-      const newPin = pasted.split('');
-      setPin(newPin);
-      if (pasted === PIN_CODE_BEN) {
-        sessionStorage.setItem('budget_auth', 'true');
-        sessionStorage.setItem('budget_user', 'ליאור הבן');
-        onSuccess('ליאור הבן');
-      } else if (pasted === PIN_CODE_BAT) {
-        sessionStorage.setItem('budget_auth', 'true');
-        sessionStorage.setItem('budget_user', 'ליאור הבת');
-        onSuccess('ליאור הבת');
-      } else {
-        setError(true);
-        setPin(['', '', '', '']);
-        setTimeout(() => inputRefs[0].current?.focus(), 100);
-      }
-    }
+    if (pasted.length === 4) { setPin(pasted.split('')); void submitPin(pasted); }
   };
 
   useEffect(() => {
-    inputRefs[0].current?.focus();
+    firstInputRef.current?.focus();
   }, []);
 
   return (
@@ -123,13 +152,17 @@ function PinScreen({ onSuccess }) {
           <img src="/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg" alt="mutual" />
         </div>
         <h1 className="pin-title">חשבון משותף</h1>
-        <p className="pin-subtitle">הזינו קוד גישה בן 4 ספרות</p>
-        
+        <p id="pin-instructions" className="pin-subtitle">הזינו קוד גישה בן 4 ספרות</p>
+
         <div className="pin-inputs" onPaste={handlePaste}>
           {pin.map((digit, i) => (
             <input
               key={i}
               ref={inputRefs[i]}
+              aria-label={`ספרה ${i + 1} מתוך 4 בקוד הגישה`}
+              aria-describedby="pin-instructions"
+              aria-invalid={Boolean(error)}
+              disabled={submitting}
               type="password"
               inputMode="numeric"
               pattern="[0-9]*"
@@ -146,9 +179,10 @@ function PinScreen({ onSuccess }) {
           ))}
         </div>
 
+        {submitting && <p className="pin-status" role="status">מאמת קוד גישה...</p>}
         {error && (
-          <div className="pin-error-msg fade-in">
-            קוד שגוי, נסו שנית
+          <div className="pin-error-msg fade-in" role="alert">
+            {error}
           </div>
         )}
       </div>
@@ -157,12 +191,27 @@ function PinScreen({ onSuccess }) {
 }
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return sessionStorage.getItem('budget_auth') === 'true';
-  });
-  const [currentUser, setCurrentUser] = useState(() => {
-    return sessionStorage.getItem('budget_user') || 'מערכת';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState('');
+  const [authRetry, setAuthRetry] = useState(0);
+  const [currentUser, setCurrentUser] = useState('מערכת');
+  useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    fetch('/api/auth', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error('לא ניתן לבדוק את ההתחברות כרגע.');
+        const session = await response.json();
+        if (!current) return;
+        setIsAuthenticated(session.authenticated === true && Boolean(session.person));
+        setCurrentUser(session.person || 'מערכת');
+      })
+      .catch(() => { if (current) setAuthError('השרת לא זמין כרגע. בדקו את החיבור ונסו שוב.'); })
+      .finally(() => { clearTimeout(timeout); if (current) setAuthChecking(false); });
+    return () => { current = false; clearTimeout(timeout); controller.abort(); };
+  }, [authRetry]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [salaries, setSalaries] = useState([]);
@@ -170,7 +219,9 @@ export default function App() {
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('home');
+  const [dataError, setDataError] = useState('');
+  const [dataRetry, setDataRetry] = useState(0);
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('view') === 'research' ? 'research' : 'home');
   const [activePortfolioId, setActivePortfolioId] = useState(null);
   const [activePortfolioName, setActivePortfolioName] = useState('');
   const [payslipFilter, setPayslipFilter] = useState('all');
@@ -188,7 +239,7 @@ export default function App() {
   const [investments, setInvestments] = useState([]);
   const [isInvestmentModalOpen, setIsInvestmentModalOpen] = useState(false);
   const [editingInvestment, setEditingInvestment] = useState(null);
-  
+
   // Investment Form state
   const [invOwnerName, setInvOwnerName] = useState('ליאור הבן');
   const [invName, setInvName] = useState('');
@@ -198,8 +249,6 @@ export default function App() {
   const [invMonthlyAddition, setInvMonthlyAddition] = useState('');
   const [invInterestType, setInvInterestType] = useState('prime');
   const [invInterestValue, setInvInterestValue] = useState('');
-  const [promptInvestmentUpdate, setPromptInvestmentUpdate] = useState(null);
-  const [staleUpdatedValue, setStaleUpdatedValue] = useState('');
 
   // Toast System state
   const [toasts, setToasts] = useState([]);
@@ -249,20 +298,20 @@ export default function App() {
   // Auto-lock after 2 minutes of inactivity
   useEffect(() => {
     if (!isAuthenticated) return;
-    
+
     let timer;
     const resetTimer = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
         setIsAuthenticated(false);
-        sessionStorage.removeItem('budget_auth');
+        void fetch('/api/auth', { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
       }, 2 * 60 * 1000); // 2 minutes
     };
-    
+
     const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll'];
     events.forEach(e => window.addEventListener(e, resetTimer));
     resetTimer();
-    
+
     return () => {
       clearTimeout(timer);
       events.forEach(e => window.removeEventListener(e, resetTimer));
@@ -295,12 +344,22 @@ export default function App() {
   const [txDate, setTxDate] = useState(new Date());
   const [txProjectId, setTxProjectId] = useState('');
   const [selectedProject, setSelectedProject] = useState(null);
+  useEffect(() => {
+    const expireSession = () => {
+      setIsAuthenticated(false); setCurrentUser('מערכת'); setTransactions([]); setSalaries([]); setProjects([]); setInvestments([]); setAuditLogs([]);
+      setActiveTab('home'); setIsSalaryModalOpen(false); setIsTransactionModalOpen(false); setIsInvestmentModalOpen(false); setPreviewPayslipUrl(null); setSelectedProject(null);
+      setConfirmConfig(prev => ({ ...prev, isOpen: false })); setPromptConfig(prev => ({ ...prev, isOpen: false }));
+    };
+    window.addEventListener('shared-account-auth-expired', expireSession);
+    return () => window.removeEventListener('shared-account-auth-expired', expireSession);
+  }, []);
+
   const [editingTransaction, setEditingTransaction] = useState(null);
 
   const CATEGORIES = [
-    'סופרמרקט', 'מסעדות ופנאי', 'רכב', 'קניות מחנויות אונליין', 
+    'סופרמרקט', 'מסעדות ופנאי', 'רכב', 'קניות מחנויות אונליין',
     'פארם/בריאות', 'לבית', 'חשבונות', 'תחבורה ציבורית',
-    'חופשות וחו"ל', 'ביטוחים', 'אירועים ומתנות', 'העברות אישיות ושונות', 
+    'חופשות וחו"ל', 'ביטוחים', 'אירועים ומתנות', 'העברות אישיות ושונות',
     'הפרשות מיוחדות', 'כללי'
   ];
 
@@ -309,7 +368,7 @@ export default function App() {
     if (portfolios.length > 0) {
       const results = await Promise.all(portfolios.map(async p => {
         try {
-          const pRes = await fetch(`/api/portfolio?investment_id=${p.id}`);
+          const pRes = await authenticatedFetch(`/api/portfolio?investment_id=${p.id}`);
           if (pRes.ok) {
             const pData = await pRes.json();
             return { id: p.id, value: pData.portfolioValue };
@@ -337,7 +396,7 @@ export default function App() {
 
   const fetchInvestments = async () => {
     try {
-      const res = await fetch('/api/investments');
+      const res = await authenticatedFetch('/api/investments');
       if (res.ok) {
         const data = await res.json();
         setInvestments(data);
@@ -349,47 +408,36 @@ export default function App() {
   };
 
   useEffect(() => {
-    const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
-        clearTimeout(id);
-        return response;
-      } catch (err) {
-        clearTimeout(id);
-        throw err;
-      }
-    };
-
-    async function fetchData() {
-      try {
-        const [txRes, salRes, projRes, invRes] = await Promise.all([
-          fetchWithTimeout('/api/transactions'),
-          fetchWithTimeout('/api/salaries'),
-          fetchWithTimeout('/api/projects'),
-          fetchWithTimeout('/api/investments')
-        ]);
-        if (txRes.ok) setTransactions(await txRes.json());
-        if (salRes.ok) setSalaries(await salRes.json());
-        if (projRes.ok) setProjects(await projRes.json());
-        if (invRes.ok) {
-          const invData = await invRes.json();
-          setInvestments(invData);
-          updatePortfoliosBackground(invData);
-        }
-      } catch (err) {
-        console.error("Error fetching data:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
+    if (!isAuthenticated) return;
+    const controller = new AbortController();
+    let current = true;
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    // Loading starts only after the server has confirmed the session.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    setDataError('');
+    loadDashboardData({ signal: controller.signal })
+      .then(({ transactions, salaries, projects, investments }) => {
+        if (!current) return;
+        setTransactions(transactions);
+        setSalaries(salaries);
+        setProjects(projects);
+        setInvestments(investments);
+        updatePortfoliosBackground(investments);
+      })
+      .catch(() => {
+        if (current) setDataError('לא ניתן לטעון את נתוני החשבון. בדקו את החיבור ונסו שוב.');
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        if (current) setLoading(false);
+      });
+    return () => { current = false; clearTimeout(timeout); controller.abort(); };
+  }, [isAuthenticated, dataRetry]);
 
   const fetchAuditLogs = async () => {
     try {
-      const res = await fetch('/api/audit_logs');
+      const res = await authenticatedFetch('/api/audit_logs');
       if (res.ok) {
         setAuditLogs(await res.json());
       }
@@ -400,6 +448,8 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === 'audit') {
+      // Entering this page starts its external audit-log synchronization.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchAuditLogs();
     }
   }, [activeTab]);
@@ -409,18 +459,18 @@ export default function App() {
     const formData = new FormData();
     formData.append('person_name', personName);
     formData.append('amount', salaryAmount);
-    
+
     const y = month.getFullYear();
     const m = String(month.getMonth() + 1).padStart(2, '0');
     const d = String(month.getDate()).padStart(2, '0');
     formData.append('month', `${y}-${m}-${d}`);
-    
+
     if (payslip) {
       formData.append('payslip', payslip);
     }
 
     try {
-      const res = await fetch('/api/salaries', {
+      const res = await authenticatedFetch('/api/salaries', {
         method: 'POST',
         headers: {
           'x-performed-by': encodeURIComponent(currentUser)
@@ -430,7 +480,7 @@ export default function App() {
       if (res.ok) {
         const newSalary = await res.json();
         setSalaries([newSalary, ...salaries]);
-        const txRes = await fetch('/api/transactions');
+        const txRes = await authenticatedFetch('/api/transactions');
         if (txRes.ok) setTransactions(await txRes.json());
         setIsSalaryModalOpen(false);
         setSalaryAmount('');
@@ -443,17 +493,17 @@ export default function App() {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    
+
     const y = txDate.getFullYear();
     const m = String(txDate.getMonth() + 1).padStart(2, '0');
     const d = String(txDate.getDate()).padStart(2, '0');
-    
+
     try {
       if (editingTransaction) {
         // PUT request
-        const res = await fetch('/api/transactions', {
+        const res = await authenticatedFetch('/api/transactions', {
           method: 'PUT',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'x-performed-by': encodeURIComponent(currentUser)
           },
@@ -478,9 +528,9 @@ export default function App() {
         }
       } else {
         // POST request
-        const res = await fetch('/api/transactions', {
+        const res = await authenticatedFetch('/api/transactions', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'x-performed-by': encodeURIComponent(currentUser)
           },
@@ -520,7 +570,7 @@ export default function App() {
   const handleDeleteTransaction = async (id) => {
     showConfirm("האם אתם בטוחים שברצונכם למחוק תנועה זו לצמיתות?", async () => {
       try {
-        const res = await fetch(`/api/transactions?id=${id}`, {
+        const res = await authenticatedFetch(`/api/transactions?id=${id}`, {
           method: 'DELETE',
           headers: {
             'x-performed-by': encodeURIComponent(currentUser)
@@ -542,7 +592,7 @@ export default function App() {
   const handleDeletePayslip = async (id) => {
     showConfirm("האם אתם בטוחים שברצונכם למחוק תלוש שכר ומשכורת זו לצמיתות?", async () => {
       try {
-        const res = await fetch(`/api/salaries?id=${id}`, {
+        const res = await authenticatedFetch(`/api/salaries?id=${id}`, {
           method: 'DELETE',
           headers: {
             'x-performed-by': encodeURIComponent(currentUser)
@@ -551,7 +601,7 @@ export default function App() {
         if (res.ok) {
           setSalaries(salaries.filter(s => s.id !== id));
           // Refresh transactions to ensure the auto-added income transaction is also removed locally
-          const txRes = await fetch('/api/transactions');
+          const txRes = await authenticatedFetch('/api/transactions');
           if (txRes.ok) {
             const data = await txRes.json();
             setTransactions(data);
@@ -565,63 +615,6 @@ export default function App() {
         showToast("שגיאה במחיקת תלוש השכר", "error");
       }
     });
-  };
-
-  // Periodic Investment Update Popup Check
-  useEffect(() => {
-    if (!isAuthenticated || !currentUser || investments.length === 0) return;
-    
-    // Find first investment owned by currentUser that has updated_at > 90 days ago
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-    const staleInv = investments.find(inv => {
-      if (inv.owner_name !== currentUser && inv.owner_name !== 'השקעה משותפת') return false;
-      const lastUpdate = new Date(inv.updated_at || inv.created_at);
-      return lastUpdate < ninetyDaysAgo;
-    });
-
-    if (staleInv) {
-      setPromptInvestmentUpdate(staleInv);
-      setStaleUpdatedValue(staleInv.current_value.toString());
-    } else {
-      setPromptInvestmentUpdate(null);
-    }
-  }, [isAuthenticated, currentUser, investments]);
-
-  const handleUpdateStaleValue = async (e) => {
-    e.preventDefault();
-    if (!promptInvestmentUpdate) return;
-    
-    try {
-      const res = await fetch('/api/investments', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-performed-by': encodeURIComponent(currentUser)
-        },
-        body: JSON.stringify({
-          id: promptInvestmentUpdate.id,
-          name: promptInvestmentUpdate.name,
-          type: promptInvestmentUpdate.type,
-          owner_name: promptInvestmentUpdate.owner_name,
-          current_value: parseFloat(staleUpdatedValue),
-          monthly_addition: parseFloat(promptInvestmentUpdate.monthly_addition) || 0
-        })
-      });
-      
-      if (res.ok) {
-        const updated = await res.json();
-        setInvestments(investments.map(inv => inv.id === updated.id ? updated : inv));
-        showToast("שווי ההשקעה עודכן בהצלחה!");
-        setPromptInvestmentUpdate(null);
-      } else {
-        showToast("שגיאה בעדכון השווי", "error");
-      }
-    } catch (err) {
-      console.error(err);
-      showToast("שגיאה בעדכון השווי", "error");
-    }
   };
 
   const handleSaveInvestment = async (e) => {
@@ -640,7 +633,7 @@ export default function App() {
 
       if (editingInvestment) {
         payload.id = editingInvestment.id;
-        const res = await fetch('/api/investments', {
+        const res = await authenticatedFetch('/api/investments', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -658,7 +651,7 @@ export default function App() {
           showToast("שגיאה בעדכון ההשקעה", "error");
         }
       } else {
-        const res = await fetch('/api/investments', {
+        const res = await authenticatedFetch('/api/investments', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -684,7 +677,7 @@ export default function App() {
   const handleDeleteInvestment = async (id) => {
     showConfirm("האם אתם בטוחים שברצונכם למחוק השקעה זו לצמיתות?", async () => {
       try {
-        const res = await fetch(`/api/investments?id=${id}`, {
+        const res = await authenticatedFetch(`/api/investments?id=${id}`, {
           method: 'DELETE',
           headers: {
             'x-performed-by': encodeURIComponent(currentUser)
@@ -706,7 +699,7 @@ export default function App() {
   const handleDeleteProject = async (id) => {
     showConfirm("האם אתם בטוחים שברצונכם למחוק פרויקט זה? כל התנועות המקושרות אליו יישארו במערכת אך לא יהיו מקושרות יותר לפרויקט.", async () => {
       try {
-        const res = await fetch(`/api/projects?id=${id}`, {
+        const res = await authenticatedFetch(`/api/projects?id=${id}`, {
           method: 'DELETE',
           headers: {
             'x-performed-by': encodeURIComponent(currentUser)
@@ -738,7 +731,7 @@ export default function App() {
     const now = new Date();
     const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     months.add(currentKey);
-    
+
     return Array.from(months).sort().reverse(); // Newest first
   }, [transactions]);
 
@@ -746,6 +739,8 @@ export default function App() {
   useEffect(() => {
     if (availableMonths.length > 0) {
       if (!compareMonthA) {
+        // Initialize the selection once the loaded transactions establish available months.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCompareMonthA(availableMonths[1] || availableMonths[0]);
       }
       if (!compareMonthB) {
@@ -758,17 +753,17 @@ export default function App() {
   const pieData = useMemo(() => {
     const expenseByCategory = {};
     let hasExpenses = false;
-    
+
     transactions.forEach(t => {
       const date = new Date(t.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
+
       if (monthKey === selectedChartMonth && t.type === 'expense') {
         expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + Number(t.amount);
         hasExpenses = true;
       }
     });
-    
+
     return {
       hasExpenses,
       labels: Object.keys(expenseByCategory),
@@ -776,7 +771,7 @@ export default function App() {
         {
           data: Object.values(expenseByCategory),
           backgroundColor: [
-            '#ef4444', '#f97316', '#f59e0b', '#84cc16', 
+            '#ef4444', '#f97316', '#f59e0b', '#84cc16',
             '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef',
             '#ec4899', '#f43f5e', '#14b8a6', '#64748b',
             '#a855f7', '#0ea5e9'
@@ -788,15 +783,10 @@ export default function App() {
     };
   }, [transactions, selectedChartMonth]);
 
-  const HEBREW_MONTHS = [
-    'ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
-    'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'
-  ];
-
   // Bar Chart data
   const trendData = useMemo(() => {
     const monthlyData = {};
-    
+
     transactions.forEach(t => {
       const date = new Date(t.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -807,12 +797,12 @@ export default function App() {
     });
 
     const sortedMonths = Object.keys(monthlyData).sort();
-    
+
     const formatLabel = (key) => {
       const [year, mon] = key.split('-');
       return `${HEBREW_MONTHS[parseInt(mon) - 1]} ${year.slice(2)}`;
     };
-    
+
     return {
       labels: sortedMonths.slice(-12).map(formatLabel),
       datasets: [
@@ -941,7 +931,7 @@ export default function App() {
 
     // Merge categories to show compared side-by-side
     const allCategories = Array.from(new Set([...Object.keys(dataA), ...Object.keys(dataB)]));
-    
+
     // Sort categories by higher combined spend
     allCategories.sort((cat1, cat2) => ((dataB[cat2] || 0) + (dataA[cat2] || 0)) - ((dataB[cat1] || 0) + (dataA[cat1] || 0)));
 
@@ -1016,7 +1006,7 @@ export default function App() {
 
   const urlBase64ToUint8Array = (base64String) => {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
     for (let i = 0; i < rawData.length; ++i) {
@@ -1027,7 +1017,7 @@ export default function App() {
 
   const handleSubscribePush = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      showToast('הדפדפן או המכשיר שלך לא תומכים בהתראות דחיפה', 'error');
+      showToast('כדי לקבל פוש ב־iPhone, הוסיפו את האתר למסך הבית ופתחו אותו משם. במכשירים אחרים נדרש דפדפן תומך.', 'error');
       return;
     }
     try {
@@ -1037,22 +1027,23 @@ export default function App() {
         showToast('יש לאשר קבלת התראות בדפדפן', 'error');
         return;
       }
-      
-      const registration = await navigator.serviceWorker.register('/push-sw.js');
-      
+
+      await navigator.serviceWorker.register('/sw.js');
+      const registration = await navigator.serviceWorker.ready;
+
       const existingSubscription = await registration.pushManager.getSubscription();
       if (existingSubscription) {
         await existingSubscription.unsubscribe();
       }
 
-      const vapidRes = await fetch('/api/vapid-public-key');
+      const vapidRes = await authenticatedFetch('/api/vapid-public-key');
       const { publicKey } = await vapidRes.json();
       const convertedVapidKey = urlBase64ToUint8Array(publicKey);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey
       });
-      
+
       const subJson = subscription.toJSON ? subscription.toJSON() : {
         endpoint: subscription.endpoint,
         keys: {
@@ -1060,15 +1051,14 @@ export default function App() {
           auth: subscription.getKey ? btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('auth')))) : ''
         }
       };
-      console.log("Subscription payload to send:", subJson);
 
-      const res = await fetch('/api/push-subscribe', {
+      const res = await authenticatedFetch('/api/push-subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subJson)
       });
       if (res.ok) {
-        showToast('נרשמת בהצלחה לקבלת התראות יומיות!');
+        showToast('התראות פעילות: סיכום יומי ומחקר מניות כל 8 שעות.');
       } else {
         const errText = await res.text();
         showToast(`שגיאה בהרשמה: ${errText}`, 'error');
@@ -1082,14 +1072,14 @@ export default function App() {
   // =================== RENDER ===================
   const renderHome = () => (
     <div className="home-tab fade-in">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+      <div className="home-heading">
         <h2 className="tab-title" style={{ margin: 0 }}>ניהול חשבון משותף</h2>
         <button onClick={handleSubscribePush} className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', color: 'var(--text-main)', cursor: 'pointer' }}>
            <Bell size={18} />
            <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>התראות</span>
         </button>
       </div>
-      
+
       {/* Monthly summary cards */}
       <div className="summary-grid">
         <div className="summary-card expense-card">
@@ -1110,8 +1100,8 @@ export default function App() {
           <h3>משכורת אחרונה - ליאור הבן</h3>
           <div className="amount" dir="ltr">₪{latestLiorBen ? Number(latestLiorBen.amount).toLocaleString() : '0'}</div>
           {latestLiorBen?.payslip_url && (
-            <button 
-              onClick={() => setPreviewPayslipUrl(latestLiorBen.payslip_url)} 
+            <button
+              onClick={() => setPreviewPayslipUrl(latestLiorBen.payslip_url)}
               className="payslip-link"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', color: 'var(--income)', display: 'inline-flex', alignItems: 'center', marginTop: '0.4rem', whiteSpace: 'nowrap' }}
             >
@@ -1123,8 +1113,8 @@ export default function App() {
           <h3>משכורת אחרונה - ליאור הבת</h3>
           <div className="amount" dir="ltr">₪{latestLiorBat ? Number(latestLiorBat.amount).toLocaleString() : '0'}</div>
           {latestLiorBat?.payslip_url && (
-            <button 
-              onClick={() => setPreviewPayslipUrl(latestLiorBat.payslip_url)} 
+            <button
+              onClick={() => setPreviewPayslipUrl(latestLiorBat.payslip_url)}
               className="payslip-link"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', color: 'var(--income)', display: 'inline-flex', alignItems: 'center', marginTop: '0.4rem', whiteSpace: 'nowrap' }}
             >
@@ -1168,23 +1158,23 @@ export default function App() {
     return (
       <div className="charts-tab fade-in">
         <h2 className="tab-title">ניתוח פיננסי מתקדם</h2>
-        
+
         {/* Segmented Control for Sub-Tabs */}
         <div className="filter-segmented" style={{ marginBottom: '1.5rem' }}>
-          <button 
-            className={analyticsSubTab === 'monthly' ? 'active' : ''} 
+          <button
+            className={analyticsSubTab === 'monthly' ? 'active' : ''}
             onClick={() => setAnalyticsSubTab('monthly')}
           >
             ניתוח חודשי
           </button>
-          <button 
-            className={analyticsSubTab === 'annual' ? 'active' : ''} 
+          <button
+            className={analyticsSubTab === 'annual' ? 'active' : ''}
             onClick={() => setAnalyticsSubTab('annual')}
           >
             דשבורד שנתי
           </button>
-          <button 
-            className={analyticsSubTab === 'comparison' ? 'active' : ''} 
+          <button
+            className={analyticsSubTab === 'comparison' ? 'active' : ''}
             onClick={() => setAnalyticsSubTab('comparison')}
           >
             השוואת חודשים
@@ -1198,23 +1188,23 @@ export default function App() {
             <div className="glass-card chart-card">
               <h3 className="chart-title">מגמת הכנסות והוצאות (12 חודשים אחרונים)</h3>
               <div className="chart-container">
-                <Bar 
-                  data={trendData} 
-                  options={{ 
-                    responsive: true, 
+                <Bar
+                  data={trendData}
+                  options={{
+                    responsive: true,
                     maintainAspectRatio: false,
                     scales: {
                       y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#64748b' } },
                       x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } }
                     },
-                    plugins: { 
-                      legend: { 
+                    plugins: {
+                      legend: {
                         rtl: true,
-                        labels: { color: '#1e293b', font: { family: 'Heebo', size: 12 }, boxWidth: 12, padding: 10 } 
+                        labels: { color: '#1e293b', font: { family: 'Heebo', size: 12 }, boxWidth: 12, padding: 10 }
                       },
                       tooltip: { rtl: true, textDirection: 'rtl', bodyAlign: 'right', titleAlign: 'right' }
                     }
-                  }} 
+                  }}
                 />
               </div>
             </div>
@@ -1222,21 +1212,22 @@ export default function App() {
             {/* Category distribution */}
             <div className="glass-card chart-card">
               <h3 className="chart-title" style={{ marginBottom: '0.75rem' }}>התפלגות הוצאות לקטגוריות</h3>
-              
+
               <div className="month-selector-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', background: 'rgba(0, 0, 0, 0.03)', borderRadius: '12px', padding: '0.4rem 0.8rem', border: '1px solid var(--border-color)' }}>
-                <button 
-                  onClick={handlePrevMonth} 
+                <button
+                  onClick={handlePrevMonth}
                   disabled={isPrevDisabled}
-                  className="month-nav-btn"
+                  className="month-nav-btn" aria-label="חודש קודם"
                   style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', color: isPrevDisabled ? 'var(--text-muted)' : 'var(--text-main)', opacity: isPrevDisabled ? 0.3 : 1, cursor: isPrevDisabled ? 'not-allowed' : 'pointer', padding: '6px' }}
                 >
                   <ChevronRight size={20} />
                 </button>
-                
-                <select 
-                  value={selectedChartMonth} 
+
+                <select
+                  aria-label="חודש לניתוח"
+                  value={selectedChartMonth}
                   onChange={(e) => setSelectedChartMonth(e.target.value)}
-                  style={{ 
+                  style={{
                     fontFamily: 'Heebo',
                     fontSize: '0.95rem',
                     fontWeight: '600',
@@ -1258,10 +1249,10 @@ export default function App() {
                   })}
                 </select>
 
-                <button 
-                  onClick={handleNextMonth} 
+                <button
+                  onClick={handleNextMonth}
                   disabled={isNextDisabled}
-                  className="month-nav-btn"
+                  className="month-nav-btn" aria-label="חודש הבא"
                   style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', color: isNextDisabled ? 'var(--text-muted)' : 'var(--text-main)', opacity: isNextDisabled ? 0.3 : 1, cursor: isNextDisabled ? 'not-allowed' : 'pointer', padding: '6px' }}
                 >
                   <ChevronLeft size={20} />
@@ -1270,20 +1261,20 @@ export default function App() {
 
               <div className="chart-container pie-container">
                 {pieData.hasExpenses ? (
-                  <Pie 
-                    data={pieData} 
-                    options={{ 
-                      responsive: true, 
+                  <Pie
+                    data={pieData}
+                    options={{
+                      responsive: true,
                       maintainAspectRatio: false,
-                      plugins: { 
-                        legend: { 
-                          position: 'bottom', 
+                      plugins: {
+                        legend: {
+                          position: 'bottom',
                           rtl: true,
-                          labels: { color: '#1e293b', font: { family: 'Heebo', size: 11 }, boxWidth: 10, padding: 8 } 
+                          labels: { color: '#1e293b', font: { family: 'Heebo', size: 11 }, boxWidth: 10, padding: 8 }
                         },
                         tooltip: { rtl: true, textDirection: 'rtl', bodyAlign: 'right', titleAlign: 'right' }
-                      } 
-                    }} 
+                      }
+                    }}
                   />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', minHeight: '200px' }}>
@@ -1302,13 +1293,14 @@ export default function App() {
             {/* Year Selector */}
             <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', padding: '0.8rem 1.2rem' }}>
               <span style={{ fontWeight: '700', fontSize: '1rem' }}>בחירת שנת ניתוח:</span>
-              <select 
-                value={selectedYear} 
+              <select
+                aria-label="שנת ניתוח"
+                value={selectedYear}
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
-                style={{ 
-                  width: 'auto', 
-                  minWidth: '100px', 
-                  padding: '0.4rem 2rem 0.4rem 1rem', 
+                style={{
+                  width: 'auto',
+                  minWidth: '100px',
+                  padding: '0.4rem 2rem 0.4rem 1rem',
                   fontSize: '0.95rem',
                   fontWeight: '600'
                 }}
@@ -1348,23 +1340,23 @@ export default function App() {
             <div className="glass-card chart-card">
               <h3 className="chart-title">הכנסות מול הוצאות לאורך שנת {selectedYear}</h3>
               <div className="chart-container">
-                <Bar 
-                  data={annualChartData} 
-                  options={{ 
-                    responsive: true, 
+                <Bar
+                  data={annualChartData}
+                  options={{
+                    responsive: true,
                     maintainAspectRatio: false,
                     scales: {
                       y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#64748b' } },
                       x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } }
                     },
-                    plugins: { 
-                      legend: { 
+                    plugins: {
+                      legend: {
                         rtl: true,
-                        labels: { color: '#1e293b', font: { family: 'Heebo', size: 12 }, boxWidth: 12, padding: 10 } 
+                        labels: { color: '#1e293b', font: { family: 'Heebo', size: 12 }, boxWidth: 12, padding: 10 }
                       },
                       tooltip: { rtl: true, textDirection: 'rtl', bodyAlign: 'right', titleAlign: 'right' }
                     }
-                  }} 
+                  }}
                 />
               </div>
             </div>
@@ -1408,8 +1400,9 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 <div>
                   <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>חודש בסיס (א'):</label>
-                  <select 
-                    value={compareMonthA} 
+                  <select
+                    aria-label="חודש בסיס להשוואה"
+                    value={compareMonthA}
                     onChange={(e) => setCompareMonthA(e.target.value)}
                     style={{ fontSize: '0.85rem', padding: '0.5rem 2rem 0.5rem 0.5rem', fontWeight: '600' }}
                   >
@@ -1421,8 +1414,9 @@ export default function App() {
                 </div>
                 <div>
                   <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>חודש השוואה (ב'):</label>
-                  <select 
-                    value={compareMonthB} 
+                  <select
+                    aria-label="חודש להשוואה"
+                    value={compareMonthB}
                     onChange={(e) => setCompareMonthB(e.target.value)}
                     style={{ fontSize: '0.85rem', padding: '0.5rem 2rem 0.5rem 0.5rem', fontWeight: '600' }}
                   >
@@ -1502,23 +1496,23 @@ export default function App() {
                   <h3 className="chart-title">השוואת קטגוריות מובילות (א' מול ב')</h3>
                   <div className="chart-container">
                     {comparisonChartData && (
-                      <Bar 
-                        data={comparisonChartData} 
-                        options={{ 
-                          responsive: true, 
+                      <Bar
+                        data={comparisonChartData}
+                        options={{
+                          responsive: true,
                           maintainAspectRatio: false,
                           scales: {
                             y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { color: '#64748b' } },
                             x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } }
                           },
-                          plugins: { 
-                            legend: { 
+                          plugins: {
+                            legend: {
                               rtl: true,
-                              labels: { color: '#1e293b', font: { family: 'Heebo', size: 11 }, boxWidth: 10, padding: 8 } 
+                              labels: { color: '#1e293b', font: { family: 'Heebo', size: 11 }, boxWidth: 10, padding: 8 }
                             },
                             tooltip: { rtl: true, textDirection: 'rtl', bodyAlign: 'right', titleAlign: 'right' }
                           }
-                        }} 
+                        }}
                       />
                     )}
                   </div>
@@ -1544,12 +1538,11 @@ export default function App() {
                           const valB = comparisonData.dataB[cat] || 0;
                           const diff = valB - valA;
                           const pct = valA > 0 ? (diff / valA) * 100 : (valB > 0 ? 100 : 0);
-                          
+
                           // Styling values
                           let diffColor = 'var(--text-main)';
                           let pctLabel = pct === 0 ? '0%' : `${pct > 0 ? '+' : ''}${pct.toFixed(0)}%`;
-                          let trendIcon = '—';
-                          
+
                           if (diff > 0) {
                             diffColor = 'var(--expense)';
                           } else if (diff < 0) {
@@ -1587,7 +1580,7 @@ export default function App() {
   const renderHistory = () => (
     <div className="history-tab fade-in">
       <h2 className="tab-title">היסטוריית תנועות</h2>
-      
+
       {transactions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)' }}>
           <p>אין תנועות עדיין</p>
@@ -1618,15 +1611,15 @@ export default function App() {
                   )}
                 </div>
                 <div className="tx-card-actions" style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button 
-                    onClick={() => startEditTransaction(t)} 
+                  <button
+                    onClick={() => startEditTransaction(t)}
                     style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                     title="ערוך"
                   >
                     <Pencil size={16} />
                   </button>
-                  <button 
-                    onClick={() => handleDeleteTransaction(t.id)} 
+                  <button
+                    onClick={() => handleDeleteTransaction(t.id)}
                     style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                     title="מחק"
                   >
@@ -1650,23 +1643,23 @@ export default function App() {
     return (
       <div className="history-tab fade-in">
         <h2 className="tab-title">צפייה בתלושי משכורת</h2>
-        
+
         {/* Segmented Filter */}
         <div className="filter-segmented">
-          <button 
-            className={payslipFilter === 'all' ? 'active' : ''} 
+          <button
+            className={payslipFilter === 'all' ? 'active' : ''}
             onClick={() => setPayslipFilter('all')}
           >
             הכל
           </button>
-          <button 
-            className={payslipFilter === 'ליאור הבן' ? 'active' : ''} 
+          <button
+            className={payslipFilter === 'ליאור הבן' ? 'active' : ''}
             onClick={() => setPayslipFilter('ליאור הבן')}
           >
             ליאור הבן
           </button>
-          <button 
-            className={payslipFilter === 'ליאור הבת' ? 'active' : ''} 
+          <button
+            className={payslipFilter === 'ליאור הבת' ? 'active' : ''}
             onClick={() => setPayslipFilter('ליאור הבת')}
           >
             ליאור הבת
@@ -1699,8 +1692,8 @@ export default function App() {
                   </div>
                   <div className="payslip-card-actions" style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                     {s.payslip_url ? (
-                      <button 
-                        onClick={() => setPreviewPayslipUrl(s.payslip_url)} 
+                      <button
+                        onClick={() => setPreviewPayslipUrl(s.payslip_url)}
                         className="btn-view-payslip"
                         style={{ border: 'none', cursor: 'pointer', fontFamily: 'Heebo', flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                       >
@@ -1710,18 +1703,18 @@ export default function App() {
                     ) : (
                       <span className="no-payslip-badge" style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>אין קובץ תלוש</span>
                     )}
-                    <button 
+                    <button
                       onClick={() => handleDeletePayslip(s.id)}
                       className="btn-delete-payslip"
-                      style={{ 
-                        background: 'rgba(239, 68, 68, 0.08)', 
-                        color: '#ef4444', 
-                        border: '1px solid rgba(239, 68, 68, 0.2)', 
-                        borderRadius: '8px', 
-                        padding: '0.5rem', 
-                        cursor: 'pointer', 
-                        display: 'inline-flex', 
-                        alignItems: 'center', 
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: '8px',
+                        padding: '0.5rem',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
                         justifyContent: 'center',
                         transition: 'all 0.2s ease',
                       }}
@@ -1747,12 +1740,12 @@ export default function App() {
             <h1>פרויקטים ומעקבים</h1>
             <p>ניהול, סיווג ומעקב מרוכז אחר תקציבים מיוחדים ואירועים (למשל: טיול בחו"ל)</p>
           </div>
-          <button 
+          <button
             onClick={() => {
               showPrompt('פרויקט חדש', 'הזינו שם לפרויקט החדש (למשל: טיול באיטליה):', async (name) => {
                 if (name && name.trim()) {
                   try {
-                    const res = await fetch('/api/projects', {
+                    const res = await authenticatedFetch('/api/projects', {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
@@ -1795,14 +1788,17 @@ export default function App() {
               const totalSpent = projTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
               return (
-                <div 
-                  key={proj.id} 
-                  className="glass-card project-card" 
+                <div
+                  key={proj.id}
+                  className="glass-card project-card"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelectedProject(proj); } }}
                   onClick={() => setSelectedProject(proj)}
-                  style={{ 
-                    padding: '1.5rem', 
-                    cursor: 'pointer', 
-                    transition: 'all 0.2s ease', 
+                  style={{
+                    padding: '1.5rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     display: 'flex',
                     flexDirection: 'column',
@@ -1812,18 +1808,18 @@ export default function App() {
                   }}
                 >
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, var(--accent), #10b981)' }}></div>
-                  
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--text-main)', fontWeight: '700', margin: 0 }}>
                       {proj.name}
                     </h3>
-                    <span style={{ 
-                      background: 'rgba(59, 130, 246, 0.1)', 
-                      color: 'var(--accent)', 
-                      padding: '0.2rem 0.6rem', 
-                      borderRadius: '12px', 
-                      fontSize: '0.75rem', 
-                      fontWeight: '700' 
+                    <span style={{
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      color: 'var(--accent)',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '12px',
+                      fontSize: '0.75rem',
+                      fontWeight: '700'
                     }}>
                       {projTxs.length} תנועות
                     </span>
@@ -1835,7 +1831,7 @@ export default function App() {
                       ₪{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </span>
                   </div>
-                  
+
                   <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                     <span>תאריך יצירה: {new Date(proj.created_at).toLocaleDateString('he-IL')}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--accent)', fontWeight: '600' }}>
@@ -1890,23 +1886,23 @@ export default function App() {
                 <div key={log.id} className="glass-card audit-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ 
-                        background: actionBadgeBg, 
-                        color: actionBadgeColor, 
-                        padding: '0.25rem 0.6rem', 
-                        borderRadius: '20px', 
-                        fontSize: '0.8rem', 
-                        fontWeight: '700' 
+                      <span style={{
+                        background: actionBadgeBg,
+                        color: actionBadgeColor,
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '20px',
+                        fontSize: '0.8rem',
+                        fontWeight: '700'
                       }}>
                         {log.action_type}
                       </span>
-                      <span style={{ 
-                        background: userBadgeBg, 
-                        color: userBadgeColor, 
-                        padding: '0.25rem 0.6rem', 
-                        borderRadius: '20px', 
-                        fontSize: '0.8rem', 
-                        fontWeight: '700' 
+                      <span style={{
+                        background: userBadgeBg,
+                        color: userBadgeColor,
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: '20px',
+                        fontSize: '0.8rem',
+                        fontWeight: '700'
                       }}>
                         {log.performed_by}
                       </span>
@@ -1949,9 +1945,10 @@ export default function App() {
         <div className="tab-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
           <div>
             <h1>ניהול ומעקב השקעות</h1>
+            <button className="btn-secondary" onClick={() => setActiveTab('research')}>מחקר מניות והצעות לתיק</button>
             <p>מעקב אחר קופות גמל, קרנות השתלמות, פקדונות וחשבונות מסחר של ליאור הבן, ליאור הבת ומשותף</p>
           </div>
-          <button 
+          <button
             onClick={() => {
               setEditingInvestment(null);
               setInvName('');
@@ -1964,13 +1961,13 @@ export default function App() {
               setInvInterestValue('');
               setIsInvestmentModalOpen(true);
             }}
-            style={{ 
-              padding: '0.6rem 1.2rem', 
-              fontSize: '0.9rem', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem', 
-              cursor: 'pointer', 
+            style={{
+              padding: '0.6rem 1.2rem',
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
               fontFamily: 'Heebo',
               backgroundColor: '#111827',
               color: '#ffffff',
@@ -2018,7 +2015,7 @@ export default function App() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {benInvestments.map(inv => (
-                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined}>
+                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined} onKeyDown={e => { if (e.target === e.currentTarget && inv.type === 'חשבון מסחר' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{inv.name}</span>
                       <span style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -2030,7 +2027,7 @@ export default function App() {
                         ₪{parseFloat(inv.current_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingInvestment(inv);
@@ -2049,7 +2046,7 @@ export default function App() {
                         >
                           <Pencil size={16} />
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteInvestment(inv.id);
@@ -2093,7 +2090,7 @@ export default function App() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {batInvestments.map(inv => (
-                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined}>
+                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined} onKeyDown={e => { if (e.target === e.currentTarget && inv.type === 'חשבון מסחר' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{inv.name}</span>
                       <span style={{ background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', padding: '0.2rem 0.5rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -2105,7 +2102,7 @@ export default function App() {
                         ₪{parseFloat(inv.current_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingInvestment(inv);
@@ -2124,7 +2121,7 @@ export default function App() {
                         >
                           <Pencil size={16} />
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteInvestment(inv.id);
@@ -2168,7 +2165,7 @@ export default function App() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {sharedInvestments.map(inv => (
-                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined}>
+                  <div key={inv.id} className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '0.5rem', cursor: inv.type === 'חשבון מסחר' ? 'pointer' : 'default' }} onClick={() => { if(inv.type === 'חשבון מסחר') { setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }} role={inv.type === 'חשבון מסחר' ? 'button' : undefined} tabIndex={inv.type === 'חשבון מסחר' ? 0 : undefined} onKeyDown={e => { if (e.target === e.currentTarget && inv.type === 'חשבון מסחר' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setActivePortfolioId(inv.id); setActivePortfolioName(inv.name); setActiveTab('portfolio'); } }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{inv.name}</span>
                       <span style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', padding: '0.2rem 0.5rem', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold' }}>
@@ -2180,7 +2177,7 @@ export default function App() {
                         ₪{parseFloat(inv.current_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingInvestment(inv);
@@ -2199,7 +2196,7 @@ export default function App() {
                         >
                           <Pencil size={16} />
                         </button>
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDeleteInvestment(inv.id);
@@ -2237,6 +2234,13 @@ export default function App() {
     );
   };
 
+  if (authChecking || authError) {
+    return <div className="pin-screen"><div className="pin-card" role="status">
+      <h1 className="pin-title">חשבון משותף</h1>
+      {authChecking ? <><div className="loading-spinner" /><p className="pin-status">בודק התחברות...</p></> : <><p className="pin-error-msg">{authError}</p><button style={{ marginTop: '1rem' }} onClick={() => { setAuthChecking(true); setAuthError(''); setAuthRetry(value => value + 1); }}>נסו שוב</button></>}
+    </div></div>;
+  }
+
   if (!isAuthenticated) {
     return <PinScreen onSuccess={(user) => {
       setCurrentUser(user);
@@ -2246,11 +2250,34 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="page-content">
+      <a className="skip-link" href="#main-content">דלגו לתוכן הראשי</a>
+      <header className="app-header">
+        <div className="app-brand">
+          <img src="/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg" alt="mutual" />
+          <div><strong>חשבון משותף</strong><span>כל התמונה הפיננסית, במקום אחד</span></div>
+        </div>
+        <div className="app-account">
+          <span className="app-user"><Lock size={14} aria-hidden="true" />{currentUser}</span>
+          <button className="logout-button" onClick={async () => {
+            try {
+              const response = await fetch('/api/auth', { method: 'DELETE', credentials: 'same-origin' });
+              if (!response.ok) throw new Error('Sign out failed');
+              setIsAuthenticated(false); setCurrentUser('מערכת'); setTransactions([]); setSalaries([]); setProjects([]); setInvestments([]); setAuditLogs([]); setActiveTab('home');
+              setIsSalaryModalOpen(false); setIsTransactionModalOpen(false); setIsInvestmentModalOpen(false); setPreviewPayslipUrl(null); setSelectedProject(null);
+            } catch { showToast('לא ניתן להתנתק כרגע. נסו שוב.', 'error'); }
+          }}>יציאה</button>
+        </div>
+      </header>
+      <main className="page-content" id="main-content" tabIndex={-1}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '3rem' }}>
             <div className="loading-spinner"></div>
             <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>טוען נתונים...</p>
+          </div>
+        ) : dataError ? (
+          <div className="glass-card" role="alert" style={{ textAlign: 'center', padding: '2rem' }}>
+            <p>{dataError}</p>
+            <button onClick={() => setDataRetry(value => value + 1)}>נסו שוב</button>
           </div>
         ) : (
           <>
@@ -2259,10 +2286,12 @@ export default function App() {
             {activeTab === 'charts' && renderCharts()}
             {activeTab === 'projects' && renderProjects()}
             {activeTab === 'investments' && renderInvestments()}
+            {activeTab === 'research' && <StockResearchPanel />}
             {activeTab === 'payslips' && renderPayslips()}
             {activeTab === 'audit' && renderAuditLogs()}
             {activeTab === 'portfolio' && (
               <PortfolioView
+                key={activePortfolioId}
                 investmentId={activePortfolioId}
                 investmentName={activePortfolioName}
                 onBack={() => {
@@ -2274,54 +2303,61 @@ export default function App() {
             )}
           </>
         )}
-      </div>
+      </main>
 
       {/* Bottom Navigation */}
-      <nav className="bottom-nav">
-        <button 
-          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} 
+      <nav className="bottom-nav" aria-label="ניווט ראשי">
+        <button
+          className={`nav-item ${activeTab === 'home' ? 'active' : ''}`}
+          aria-current={activeTab === 'home' ? 'page' : undefined}
           onClick={() => setActiveTab('home')}
         >
           <Home size={22} />
           <span>ראשי</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'history' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'history' ? 'active' : ''}`}
+          aria-current={activeTab === 'history' ? 'page' : undefined}
           onClick={() => setActiveTab('history')}
         >
           <History size={22} />
           <span>היסטוריה</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'charts' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'charts' ? 'active' : ''}`}
+          aria-current={activeTab === 'charts' ? 'page' : undefined}
           onClick={() => setActiveTab('charts')}
         >
           <BarChart3 size={22} />
           <span>גרפים</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'projects' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'projects' ? 'active' : ''}`}
+          aria-current={activeTab === 'projects' ? 'page' : undefined}
           onClick={() => setActiveTab('projects')}
         >
           <Briefcase size={22} />
           <span>פרויקטים</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'investments' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'investments' ? 'active' : ''}`}
+          aria-current={(activeTab === 'investments' || activeTab === 'portfolio') ? 'page' : undefined}
           onClick={() => setActiveTab('investments')}
         >
           <Coins size={22} />
           <span>השקעות</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'payslips' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'payslips' ? 'active' : ''}`}
+          aria-current={activeTab === 'payslips' ? 'page' : undefined}
           onClick={() => setActiveTab('payslips')}
         >
           <FileText size={22} />
           <span>תלושים</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'audit' ? 'active' : ''}`} 
+        <button
+          className={`nav-item ${activeTab === 'audit' ? 'active' : ''}`}
+          aria-current={activeTab === 'audit' ? 'page' : undefined}
           onClick={() => setActiveTab('audit')}
         >
           <ClipboardList size={22} />
@@ -2332,50 +2368,50 @@ export default function App() {
       {/* Salary Modal */}
       {isSalaryModalOpen && (
         <div className="modal-overlay" onClick={() => setIsSalaryModalOpen(false)}>
-          <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
-            <button type="button" className="close-btn" onClick={() => setIsSalaryModalOpen(false)}>
+          <DialogFrame label="הוספת משכורת חדשה" onClose={() => setIsSalaryModalOpen(false)} className="modal-content fade-in" onClick={e => e.stopPropagation()}>
+            <button type="button" className="close-btn" aria-label="סגירת חלון" onClick={() => setIsSalaryModalOpen(false)}>
               <X size={24} />
             </button>
             <h2 style={{ marginBottom: '1.5rem', color: 'var(--text-main)' }}>הוספת משכורת חדשה</h2>
             <form onSubmit={handleAddSalary}>
               <div className="form-group">
-                <label>מי קיבל משכורת?</label>
-                <select value={personName} onChange={e => setPersonName(e.target.value)} required>
+                <label htmlFor="account-field-1">מי קיבל משכורת?</label>
+                <select id="account-field-1" value={personName} onChange={e => setPersonName(e.target.value)} required>
                   <option value="ליאור הבן">ליאור הבן</option>
                   <option value="ליאור הבת">ליאור הבת</option>
                 </select>
               </div>
               <div className="form-group">
-                <label>סכום (₪)</label>
-                <input type="number" step="0.01" value={salaryAmount} onChange={e => setSalaryAmount(e.target.value)} required placeholder="לדוגמה: 12500" />
+                <label htmlFor="account-field-2">סכום (₪)</label>
+                <input id="account-field-2" type="number" step="0.01" value={salaryAmount} onChange={e => setSalaryAmount(e.target.value)} required placeholder="לדוגמה: 12500" />
               </div>
               <div className="form-group">
-                <label>חודש משכורת</label>
-                <DatePicker 
-                  selected={month} 
-                  onChange={(date) => setMonth(date)} 
-                  dateFormat="MM/yyyy" 
-                  showMonthYearPicker 
+                <label htmlFor="account-field-3">חודש משכורת</label>
+                <DatePicker id="account-field-3"
+                  selected={month}
+                  onChange={(date) => setMonth(date)}
+                  dateFormat="MM/yyyy"
+                  showMonthYearPicker
                   locale="he"
-                  required 
+                  required
                   customInput={<CustomDateInput />}
                 />
               </div>
               <div className="form-group">
-                <label>תלוש משכורת (אופציונלי)</label>
-                <input type="file" accept="image/*,application/pdf" onChange={e => setPayslip(e.target.files[0])} />
+                <label htmlFor="account-field-4">תלוש משכורת (אופציונלי)</label>
+                <input id="account-field-4" type="file" accept="image/*,application/pdf" onChange={e => setPayslip(e.target.files[0])} />
               </div>
               <button type="submit" style={{ width: '100%' }}>שמור משכורת</button>
             </form>
-          </div>
+          </DialogFrame>
         </div>
       )}
 
       {/* Transaction Modal */}
       {isTransactionModalOpen && (
         <div className="modal-overlay" onClick={() => setIsTransactionModalOpen(false)}>
-          <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
-            <button type="button" className="close-btn" onClick={() => setIsTransactionModalOpen(false)}>
+          <DialogFrame label="תנועה בחשבון" onClose={() => setIsTransactionModalOpen(false)} className="modal-content fade-in" onClick={e => e.stopPropagation()}>
+            <button type="button" className="close-btn" aria-label="סגירת חלון" onClick={() => setIsTransactionModalOpen(false)}>
               <X size={24} />
             </button>
             <h2 style={{ marginBottom: '1.5rem', color: 'var(--text-main)' }}>
@@ -2383,22 +2419,22 @@ export default function App() {
             </h2>
             <form onSubmit={handleAddTransaction}>
               <div className="form-group">
-                <label>קטגוריה</label>
-                <select value={txCategory} onChange={e => setTxCategory(e.target.value)} required>
+                <label htmlFor="account-field-5">קטגוריה</label>
+                <select id="account-field-5" value={txCategory} onChange={e => setTxCategory(e.target.value)} required>
                   {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label>שיוך לפרויקט (אופציונלי)</label>
-                <select 
-                  value={txProjectId} 
+                <label htmlFor="account-field-6">שיוך לפרויקט (אופציונלי)</label>
+                <select id="account-field-6"
+                  value={txProjectId}
                   onChange={async (e) => {
                     const val = e.target.value;
                     if (val === 'CREATE_NEW') {
                       const name = prompt('הזינו שם לפרויקט החדש (למשל: טיול באיטליה):');
                       if (name && name.trim()) {
                         try {
-                          const res = await fetch('/api/projects', {
+                          const res = await authenticatedFetch('/api/projects', {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
@@ -2430,21 +2466,21 @@ export default function App() {
                 </select>
               </div>
               <div className="form-group">
-                <label>תיאור (אופציונלי)</label>
-                <input type="text" value={txDescription} onChange={e => setTxDescription(e.target.value)} placeholder="לדוגמה: קניות בסופר" />
+                <label htmlFor="account-field-7">תיאור (אופציונלי)</label>
+                <input id="account-field-7" type="text" value={txDescription} onChange={e => setTxDescription(e.target.value)} placeholder="לדוגמה: קניות בסופר" />
               </div>
               <div className="form-group">
-                <label>סכום (₪)</label>
-                <input type="number" step="0.01" value={txAmount} onChange={e => setTxAmount(e.target.value)} required placeholder="לדוגמה: 250" />
+                <label htmlFor="account-field-8">סכום (₪)</label>
+                <input id="account-field-8" type="number" step="0.01" value={txAmount} onChange={e => setTxAmount(e.target.value)} required placeholder="לדוגמה: 250" />
               </div>
               <div className="form-group">
-                <label>תאריך</label>
-                <DatePicker 
-                  selected={txDate} 
-                  onChange={(date) => setTxDate(date)} 
-                  dateFormat="dd/MM/yyyy" 
+                <label htmlFor="account-field-9">תאריך</label>
+                <DatePicker id="account-field-9"
+                  selected={txDate}
+                  onChange={(date) => setTxDate(date)}
+                  dateFormat="dd/MM/yyyy"
                   locale="he"
-                  required 
+                  required
                   customInput={<CustomDateInput />}
                 />
               </div>
@@ -2452,40 +2488,40 @@ export default function App() {
                 {editingTransaction ? 'שמור שינויים' : 'שמור הוצאה'}
               </button>
             </form>
-          </div>
+          </DialogFrame>
         </div>
       )}
       {/* Payslip Preview Modal */}
       {previewPayslipUrl && (
         <div className="modal-overlay" onClick={() => setPreviewPayslipUrl(null)}>
-          <div className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', width: '95%', padding: '1.25rem 1rem' }}>
-            <button type="button" className="close-btn" onClick={() => setPreviewPayslipUrl(null)}>
+          <DialogFrame label="צפייה בתלוש משכורת" onClose={() => setPreviewPayslipUrl(null)} className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', width: '95%', padding: '1.25rem 1rem' }}>
+            <button type="button" className="close-btn" aria-label="סגירת חלון" onClick={() => setPreviewPayslipUrl(null)}>
               <X size={24} />
             </button>
             <h2 style={{ marginBottom: '1rem', color: 'var(--text-main)', textAlign: 'center' }}>צפייה בתלוש משכורת</h2>
-            
+
             <div style={{ background: '#f8fafc', borderRadius: '0.75rem', padding: '0.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '48vh', minHeight: '220px', maxHeight: '480px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
               {previewPayslipUrl.toLowerCase().includes('.pdf') ? (
-                <iframe 
-                  src={previewPayslipUrl} 
-                  style={{ border: 'none', borderRadius: '0.5rem', width: '100%', height: '100%' }} 
-                  title="תלוש משכורת PDF" 
+                <iframe
+                  src={previewPayslipUrl}
+                  style={{ border: 'none', borderRadius: '0.5rem', width: '100%', height: '100%' }}
+                  title="תלוש משכורת PDF"
                 />
               ) : (
-                <img 
-                  src={previewPayslipUrl} 
-                  alt="תלוש משכורת" 
-                  style={{ width: '100%', height: '100%', borderRadius: '0.5rem', objectFit: 'contain' }} 
+                <img
+                  src={previewPayslipUrl}
+                  alt="תלוש משכורת"
+                  style={{ width: '100%', height: '100%', borderRadius: '0.5rem', objectFit: 'contain' }}
                 />
               )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '1.5rem' }}>
-              <a 
-                href={previewPayslipUrl} 
-                download 
-                className="btn" 
-                style={{ 
+              <a
+                href={previewPayslipUrl}
+                download
+                className="btn"
+                style={{
                   fontFamily: 'Heebo',
                   background: 'var(--accent)',
                   color: 'white',
@@ -2503,15 +2539,15 @@ export default function App() {
               >
                 הורד קובץ
               </a>
-              <button 
-                type="button" 
-                onClick={() => setPreviewPayslipUrl(null)} 
+              <button
+                type="button"
+                onClick={() => setPreviewPayslipUrl(null)}
                 style={{ width: '100%', background: '#64748b' }}
               >
                 סגור
               </button>
             </div>
-          </div>
+          </DialogFrame>
         </div>
       )}
 
@@ -2519,14 +2555,14 @@ export default function App() {
 {selectedProject && (() => {
         const projTxs = transactions.filter(t => t.project_id === selectedProject.id);
         const totalSpent = projTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + parseFloat(t.amount), 0);
-        
+
         return (
           <div className="modal-overlay" onClick={() => setSelectedProject(null)}>
-            <div className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px', width: '95%', padding: '1.5rem 1.25rem' }}>
-              <button type="button" className="close-btn" onClick={() => setSelectedProject(null)}>
+            <DialogFrame label="פרטי פרויקט" onClose={() => setSelectedProject(null)} className="modal-content fade-in" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px', width: '95%', padding: '1.5rem 1.25rem' }}>
+              <button type="button" className="close-btn" aria-label="סגירת חלון" onClick={() => setSelectedProject(null)}>
                 <X size={24} />
               </button>
-              
+
               <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
                 <h2 style={{ color: 'var(--text-main)', fontSize: '1.5rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Briefcase size={24} style={{ color: 'var(--accent)' }} />
@@ -2541,15 +2577,15 @@ export default function App() {
               {(() => {
                 const isZero = totalSpent === 0;
                 return (
-                  <div className="glass-card" style={{ 
-                    background: isZero ? 'rgba(234, 179, 8, 0.05)' : 'rgba(239, 68, 68, 0.05)', 
-                    border: isZero ? '1px solid rgba(234, 179, 8, 0.2)' : '1px solid rgba(239, 68, 68, 0.1)', 
-                    padding: '1rem', 
-                    borderRadius: '0.75rem', 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center', 
-                    marginBottom: '1.5rem' 
+                  <div className="glass-card" style={{
+                    background: isZero ? 'rgba(234, 179, 8, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                    border: isZero ? '1px solid rgba(234, 179, 8, 0.2)' : '1px solid rgba(239, 68, 68, 0.1)',
+                    padding: '1rem',
+                    borderRadius: '0.75rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1.5rem'
                   }}>
                     <span style={{ fontSize: '1rem', color: 'var(--text-main)', fontWeight: '600' }}>סה"כ הוצאות בפרויקט:</span>
                     <span style={{ fontSize: '1.75rem', color: isZero ? '#d97706' : 'var(--expense)', fontWeight: '900' }} dir="ltr">
@@ -2568,13 +2604,13 @@ export default function App() {
               ) : (
                 <div className="project-tx-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '300px', overflowY: 'auto', paddingLeft: '4px' }}>
                   {projTxs.map((t) => (
-                    <div 
-                      key={t.id} 
+                    <div
+                      key={t.id}
                       className="tx-item-card"
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center', 
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
                         background: 'rgba(255, 255, 255, 0.03)',
                         border: '1px solid var(--border-color)',
                         padding: '0.85rem 1rem',
@@ -2590,25 +2626,25 @@ export default function App() {
                         </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span style={{ 
-                          fontWeight: '800', 
+                        <span style={{
+                          fontWeight: '800',
                           color: t.type === 'income' ? 'var(--income)' : 'var(--expense)',
-                          fontSize: '1.1rem' 
+                          fontSize: '1.1rem'
                         }} dir="ltr">
                           {t.type === 'income' ? '+' : '-'} ₪{parseFloat(t.amount).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                         </span>
-                        
+
                         <div style={{ display: 'flex', gap: '0.35rem' }}>
-                          <button 
+                          <button
                             onClick={() => {
                               setSelectedProject(null);
                               startEditTransaction(t);
                             }}
-                            style={{ 
-                              background: 'transparent', 
-                              border: 'none', 
-                              color: 'var(--text-muted)', 
-                              cursor: 'pointer', 
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
                               padding: '4px',
                               borderRadius: '4px'
                             }}
@@ -2616,11 +2652,11 @@ export default function App() {
                           >
                             <Pencil size={15} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => {
                               showConfirm("האם אתם בטוחים שברצונכם למחוק תנועה זו?", async () => {
                                 try {
-                                  const res = await fetch(`/api/transactions?id=${t.id}`, {
+                                  const res = await authenticatedFetch(`/api/transactions?id=${t.id}`, {
                                     method: 'DELETE',
                                     headers: {
                                       'x-performed-by': encodeURIComponent(currentUser)
@@ -2638,11 +2674,11 @@ export default function App() {
                                 }
                               });
                             }}
-                            style={{ 
-                              background: 'transparent', 
-                              border: 'none', 
-                              color: 'var(--expense)', 
-                              cursor: 'pointer', 
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--expense)',
+                              cursor: 'pointer',
                               padding: '4px',
                               borderRadius: '4px'
                             }}
@@ -2658,23 +2694,23 @@ export default function App() {
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => handleDeleteProject(selectedProject.id)}
                   style={{ background: 'var(--expense)', cursor: 'pointer', fontFamily: 'Heebo', padding: '0.5rem 1rem', fontSize: '0.9rem', borderRadius: '8px', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: '4px' }}
                 >
                   <Trash2 size={16} />
                   מחק פרויקט
                 </button>
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedProject(null)} 
+                <button
+                  type="button"
+                  onClick={() => setSelectedProject(null)}
                   style={{ background: '#64748b', width: '100px', cursor: 'pointer', fontFamily: 'Heebo', padding: '0.5rem 1rem', fontSize: '0.9rem', borderRadius: '8px', border: 'none', color: '#fff' }}
                 >
                   סגור
                 </button>
               </div>
-            </div>
+            </DialogFrame>
           </div>
         );
       })()}
@@ -2682,8 +2718,8 @@ export default function App() {
       {/* Investment Modal */}
       {isInvestmentModalOpen && (
         <div className="modal-overlay" onClick={() => setIsInvestmentModalOpen(false)}>
-          <div className="modal-content fade-in" onClick={e => e.stopPropagation()}>
-            <button type="button" className="close-btn" onClick={() => setIsInvestmentModalOpen(false)}>
+          <DialogFrame label="פרטי השקעה" onClose={() => setIsInvestmentModalOpen(false)} className="modal-content fade-in" onClick={e => e.stopPropagation()}>
+            <button type="button" className="close-btn" aria-label="סגירת חלון" onClick={() => setIsInvestmentModalOpen(false)}>
               <X size={24} />
             </button>
             <h2 style={{ marginBottom: '1.5rem', color: 'var(--text-main)' }}>
@@ -2691,10 +2727,10 @@ export default function App() {
             </h2>
             <form onSubmit={handleSaveInvestment}>
               <div className="form-group">
-                <label>שיוך השקעה</label>
-                <select 
-                  value={invOwnerName} 
-                  onChange={e => setInvOwnerName(e.target.value)} 
+                <label htmlFor="account-field-10">שיוך השקעה</label>
+                <select id="account-field-10"
+                  value={invOwnerName}
+                  onChange={e => setInvOwnerName(e.target.value)}
                   required
                 >
                   <option value="ליאור הבן">ליאור הבן</option>
@@ -2703,20 +2739,20 @@ export default function App() {
                 </select>
               </div>
               <div className="form-group">
-                <label>שם ההשקעה</label>
-                <input 
-                  type="text" 
-                  value={invName} 
-                  onChange={e => setInvName(e.target.value)} 
-                  required 
-                  placeholder="לדוגמה: קרן השתלמות, קופת גמל" 
+                <label htmlFor="account-field-11">שם ההשקעה</label>
+                <input id="account-field-11"
+                  type="text"
+                  value={invName}
+                  onChange={e => setInvName(e.target.value)}
+                  required
+                  placeholder="לדוגמה: קרן השתלמות, קופת גמל"
                 />
               </div>
               <div className="form-group">
-                <label>סוג ההשקעה</label>
-                <select 
-                  value={invType} 
-                  onChange={e => setInvType(e.target.value)} 
+                <label htmlFor="account-field-12">סוג ההשקעה</label>
+                <select id="account-field-12"
+                  value={invType}
+                  onChange={e => setInvType(e.target.value)}
                   required
                 >
                   <option value="חשבון מסחר">חשבון מסחר</option>
@@ -2727,76 +2763,76 @@ export default function App() {
                 </select>
               </div>
               <div className="form-group">
-                <label>ערך השקעה ראשוני (₪) *</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={invInitialValue} 
-                  onChange={e => setInvInitialValue(e.target.value)} 
-                  required 
-                  placeholder="הזינו את סכום ההשקעה הראשוני" 
+                <label htmlFor="account-field-13">ערך השקעה ראשוני (₪) *</label>
+                <input id="account-field-13"
+                  type="number"
+                  step="0.01"
+                  value={invInitialValue}
+                  onChange={e => setInvInitialValue(e.target.value)}
+                  required
+                  placeholder="הזינו את סכום ההשקעה הראשוני"
                 />
               </div>
               <div className="form-group">
-                <label>ערך נוכחי (₪) *</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={invCurrentValue} 
-                  onChange={e => setInvCurrentValue(e.target.value)} 
-                  required 
-                  placeholder="הזינו את השווי הנוכחי בשקלים" 
+                <label htmlFor="account-field-14">ערך נוכחי (₪) *</label>
+                <input id="account-field-14"
+                  type="number"
+                  step="0.01"
+                  value={invCurrentValue}
+                  onChange={e => setInvCurrentValue(e.target.value)}
+                  required
+                  placeholder="הזינו את השווי הנוכחי בשקלים"
                 />
               </div>
               <div className="form-group">
-                <label>הפקדה חודשית קבועה (₪ - אופציונלי)</label>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={invMonthlyAddition} 
-                  onChange={e => setInvMonthlyAddition(e.target.value)} 
-                  placeholder="לדוגמה: 500" 
+                <label htmlFor="account-field-15">הפקדה חודשית קבועה (₪ - אופציונלי)</label>
+                <input id="account-field-15"
+                  type="number"
+                  step="0.01"
+                  value={invMonthlyAddition}
+                  onChange={e => setInvMonthlyAddition(e.target.value)}
+                  placeholder="לדוגמה: 500"
                 />
               </div>
-              
+
               {invType === 'פיקדון' && (
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1rem' }}>
                   <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-main)', fontSize: '0.9rem' }}>הגדרות ריבית</h4>
                   <div className="form-group" style={{ marginBottom: '0.5rem' }}>
-                    <label>סוג ריבית</label>
-                    <select 
-                      value={invInterestType} 
-                      onChange={e => setInvInterestType(e.target.value)} 
+                    <label htmlFor="account-field-16">סוג ריבית</label>
+                    <select id="account-field-16"
+                      value={invInterestType}
+                      onChange={e => setInvInterestType(e.target.value)}
                     >
                       <option value="prime">צמוד לפריים (ריבית בנק ישראל + 1.5%)</option>
                       <option value="fixed">ריבית קבועה</option>
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>
+                    <label htmlFor="account-field-17">
                       {invInterestType === 'prime' ? 'מרווח מהפריים (% - ניתן להזין מינוס)' : 'אחוז הריבית השנתית (%)'}
                     </label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      value={invInterestValue} 
-                      onChange={e => setInvInterestValue(e.target.value)} 
-                      required 
+                    <input id="account-field-17"
+                      type="number"
+                      step="0.01"
+                      value={invInterestValue}
+                      onChange={e => setInvInterestValue(e.target.value)}
+                      required
                       dir="ltr"
-                      placeholder={invInterestType === 'prime' ? '-1.5' : '4.0'} 
+                      placeholder={invInterestType === 'prime' ? '-1.5' : '4.0'}
                     />
                   </div>
                 </div>
               )}
               <button type="submit" style={{ width: '100%', marginTop: '1rem' }}>שמור השקעה</button>
             </form>
-          </div>
+          </DialogFrame>
         </div>
       )}
 
       {/* Toast notifications */}
       {toasts.length > 0 && (
-        <div className="toasts-container">
+        <div className="toasts-container" role="status" aria-live="polite" aria-atomic="false">
           {toasts.map(t => (
             <div key={t.id} className={`toast-card ${t.type} fade-in`}>
               {t.message}
@@ -2808,37 +2844,38 @@ export default function App() {
       {/* Custom Confirm Modal */}
       {confirmConfig.isOpen && (
         <div className="custom-dialog-overlay" onClick={confirmConfig.onCancel}>
-          <div className="custom-dialog-card" onClick={e => e.stopPropagation()}>
+          <DialogFrame label="אישור פעולה" onClose={confirmConfig.onCancel} className="custom-dialog-card" onClick={e => e.stopPropagation()}>
             <h3>אישור פעולה</h3>
             <p>{confirmConfig.message}</p>
             <div className="custom-dialog-buttons">
-              <button 
-                type="button" 
-                className="btn-cancel" 
+              <button
+                type="button"
+                className="btn-cancel"
                 onClick={confirmConfig.onCancel}
               >
                 ביטול
               </button>
-              <button 
-                type="button" 
-                style={{ background: 'var(--expense)' }} 
+              <button
+                type="button"
+                style={{ background: 'var(--expense)' }}
                 onClick={confirmConfig.onConfirm}
               >
                 אישור
               </button>
             </div>
-          </div>
+          </DialogFrame>
         </div>
       )}
 
       {/* Custom Prompt Modal */}
       {promptConfig.isOpen && (
         <div className="custom-dialog-overlay" onClick={promptConfig.onCancel}>
-          <div className="custom-dialog-card" onClick={e => e.stopPropagation()}>
+          <DialogFrame label="הזנת פרטים" onClose={promptConfig.onCancel} className="custom-dialog-card" onClick={e => e.stopPropagation()}>
             <h3>{promptConfig.title}</h3>
             <div className="form-group" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
-              <input 
-                type="text" 
+              <input
+                type="text"
+                aria-label={promptConfig.title}
                 placeholder={promptConfig.placeholder}
                 value={promptConfig.value}
                 onChange={e => setPromptConfig(prev => ({ ...prev, value: e.target.value }))}
@@ -2846,21 +2883,21 @@ export default function App() {
               />
             </div>
             <div className="custom-dialog-buttons">
-              <button 
-                type="button" 
-                className="btn-cancel" 
+              <button
+                type="button"
+                className="btn-cancel"
                 onClick={promptConfig.onCancel}
               >
                 ביטול
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => promptConfig.onConfirm(promptConfig.value)}
               >
                 אישור
               </button>
             </div>
-          </div>
+          </DialogFrame>
         </div>
       )}
     </div>

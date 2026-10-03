@@ -3,7 +3,7 @@ self.addEventListener('push', function(event) {
   if (event.data) {
     try {
       data = event.data.json();
-    } catch (e) {
+    } catch {
       data = { title: 'התראה', body: event.data.text() };
     }
   }
@@ -13,9 +13,11 @@ self.addEventListener('push', function(event) {
     icon: '/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
     badge: '/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
     vibrate: [100, 50, 100],
+    tag: data.tag,
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: '1'
+      primaryKey: '1',
+      url: data.url === '/?view=research' ? data.url : '/'
     }
   };
 
@@ -27,6 +29,6 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   event.waitUntil(
-    clients.openWindow('/')
+    clients.openWindow(event.notification.data?.url === '/?view=research' ? '/?view=research' : '/')
   );
 });
