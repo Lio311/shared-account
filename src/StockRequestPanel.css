@@ -6,7 +6,7 @@
 .stock-request-search button { display:flex; align-items:center; gap:.3rem; border:0; border-radius:12px; background:var(--text-main); color:white; padding:.5rem .7rem; font:inherit; font-size:.76rem; min-height:44px; cursor:pointer; }
 .stock-request-search button:disabled { opacity:.5; }
 .stock-request-matches { display:grid; gap:.4rem; }
-.stock-request-matches button, .stock-request-list button { display:flex; width:100%; align-items:center; justify-content:space-between; gap:.6rem; background:#f6f9fc; border:1px solid var(--border-color); border-radius:12px; padding:.7rem; font:inherit; font-size:.73rem; text-align:right; cursor:pointer; min-height:44px; }
+.stock-request-matches button, .stock-request-list button { display:flex; width:100%; align-items:center; justify-content:space-between; gap:.6rem; background:#f6f9fc; border:1px solid var(--border-color); border-radius:12px; padding:.7rem; font:inherit; font-size:.73rem; color:var(--text-main); text-align:right; cursor:pointer; min-height:44px; }
 .stock-request-matches button > span:first-child { display:flex; flex-direction:column; gap:.2rem; max-width:70%; }
 .stock-request-matches small { color:var(--text-muted); }
 .stock-request-matches button > span:last-child { color:var(--accent); }
