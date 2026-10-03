@@ -41,3 +41,9 @@
 .stock-requests .stock-request-push, .stock-requests .stock-request-push:hover, .stock-requests .stock-request-push:focus-visible { background:transparent; color:var(--accent); }
 .stock-requests .stock-request-list button:hover, .stock-requests .stock-request-matches button:hover { background:#eaf0f7; color:var(--text-main); }
 .stock-requests .stock-request-error button:hover, .stock-requests .stock-request-analysis-title button:hover { background:#edf3fa; color:var(--accent); }
+
+.stock-request-row { display:flex; align-items:stretch; gap:.4rem; margin:.4rem 0; }
+.stock-request-row .stock-request-open { flex:1; min-width:0; margin:0; }
+.stock-requests .stock-request-row .stock-request-delete { width:44px; flex:0 0 44px; margin:0; padding:0; justify-content:center; color:#64748b; background:transparent; border-color:transparent; }
+.stock-requests .stock-request-row .stock-request-delete:hover { color:#b44e4e; background:#fff1f1; }
+.stock-request-delete:disabled { opacity:.45; cursor:wait; }

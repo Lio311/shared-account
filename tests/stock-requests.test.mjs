@@ -70,7 +70,7 @@ test('research becomes ready only with successful provider coverage and both fun
 
 test('unauthenticated queue search/read/write never connects to database or provider', async () => {
   const f = await fixture({ authenticated: false });
-  for (const [method, body, query] of [['GET', undefined, { q: 'Apple' }], ['GET', undefined, { id: requestId }], ['POST', { symbol: 'AAPL' }, {}]]) {
+  for (const [method, body, query] of [['GET', undefined, { q: 'Apple' }], ['GET', undefined, { id: requestId }], ['POST', { symbol: 'AAPL' }, {}], ['DELETE', undefined, { id: requestId }]]) {
     assert.equal((await f.request(method, body, query)).statusCode, 401);
   }
   assert.equal(f.connects, 0);
@@ -80,7 +80,8 @@ test('unauthenticated queue search/read/write never connects to database or prov
 
 test('invalid methods, company queries, IDs and symbols are rejected before provider or database calls', async () => {
   const f = await fixture();
-  assert.equal((await f.request('DELETE')).statusCode, 405);
+  assert.equal((await f.request('PATCH')).statusCode, 405);
+  assert.equal((await f.request('DELETE')).statusCode, 400);
   for (const q of ['', ' ', ['Apple'], 'a'.repeat(81)]) assert.equal((await f.request('GET', undefined, { q })).statusCode, 400);
   for (const id of ['invalid', [requestId], `${requestId}&other=1`]) assert.equal((await f.request('GET', undefined, { id })).statusCode, 400);
   for (const symbol of ['aapl', 'AAPL/../../', ['AAPL'], '', null]) assert.equal((await f.request('POST', { symbol })).statusCode, 400);
@@ -178,4 +179,20 @@ test('requested symbols receive scan budget first without being inserted into ac
   assert.deepEqual(report.results.map(item => item.symbol), ['AAPL']);
   assert.deepEqual(report.requestedResults.map(item => item.symbol), ['MSFT', 'AAPL']);
   assert.ok(report.requestedResults.every(requests.researchReady));
+});
+
+
+test('deletion is authenticated and owner scoped for both pending and ready research', async () => {
+  const f = await fixture({ query: async sql => ({ rows: sql.startsWith('DELETE FROM') ? [{ id: requestId }] : [] }) });
+  const response = await f.request('DELETE', undefined, { id: requestId, person: 'Victim' });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.deleted, true);
+  const deletion = f.calls.find(({ sql }) => sql.startsWith('DELETE FROM'));
+  assert.match(deletion.sql, /WHERE id = \$1 AND person = \$2 RETURNING id/);
+  assert.deepEqual(deletion.values, [requestId, person]);
+  assert.equal(f.searches.length, 0);
+  assert.equal(f.closes, 1);
+  const missing = await fixture();
+  assert.equal((await missing.request('DELETE', undefined, { id: requestId })).statusCode, 404);
+  assert.equal((await missing.request('DELETE', undefined, { id: 'bad' })).statusCode, 400);
 });

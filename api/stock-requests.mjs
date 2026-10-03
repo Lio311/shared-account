@@ -12,7 +12,7 @@ function matches(payload) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!requireAuth(req, res)) return;
-  if (!['GET', 'POST'].includes(req.method)) { res.setHeader('Allow', 'GET, POST'); return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' }); }
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) { res.setHeader('Allow', 'GET, POST, DELETE'); return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' }); }
   let body;
   if (req.method === 'POST') {
     try { body = bodyObject(req.body); } catch { return res.status(400).json({ error: 'INVALID_BODY' }); }
@@ -28,12 +28,18 @@ export default async function handler(req, res) {
     } catch { return res.status(503).json({ error: 'SEARCH_UNAVAILABLE' }); }
   }
   if (req.query?.id !== undefined && !validRequestId(req.query.id)) return res.status(400).json({ error: 'INVALID_REQUEST_ID' });
+  if (req.method === 'DELETE' && !validRequestId(req.query?.id)) return res.status(400).json({ error: 'INVALID_REQUEST_ID' });
   const client = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000, query_timeout: 5000 });
   let transaction = false;
   try {
     await client.connect();
     await ensureRequestsTable(client);
     const person = req.auth.person;
+    if (req.method === 'DELETE') {
+      const deleted = await client.query('DELETE FROM stock_research_requests WHERE id = $1 AND person = $2 RETURNING id', [req.query.id, person]);
+      if (!deleted.rows.length) return res.status(404).json({ error: 'REQUEST_NOT_FOUND' });
+      return res.status(200).json({ deleted: true });
+    }
     if (req.method === 'GET') {
       const fields = 'id, symbol, instrument_name AS "instrumentName", status, attempts, created_at AS "createdAt", completed_at AS "completedAt", result, notification_status AS "notificationStatus"';
       const result = req.query?.id ? await client.query(`SELECT ${fields} FROM stock_research_requests WHERE id = $1 AND person = $2`, [req.query.id, person]) : await client.query(`SELECT ${fields} FROM stock_research_requests WHERE person = $1 ORDER BY created_at DESC LIMIT 30`, [person]);

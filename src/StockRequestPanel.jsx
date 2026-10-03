@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Search, Bell, CheckCircle2, Clock3 } from 'lucide-react';
+import { Search, Bell, CheckCircle2, Clock3, Trash2 } from 'lucide-react';
 import './StockRequestPanel.css';
 async function api(path, options) {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(12000), ...options });
@@ -20,20 +20,22 @@ export default function StockRequestPanel({ renderAnalysis, onEnableNotification
   const [requests, setRequests] = useState([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState('');
+  const [deleting, setDeleting] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState(initialId);
   const [loading, setLoading] = useState(true);
   const [pushEnabled, setPushEnabled] = useState(false);
   const analysisRef = useRef(null);
+  const focusedId = useRef(initialId);
   const searchAttempt = useRef(0), submitLock = useRef(false);
   const load = useCallback(async () => {
     try {
       const list = await api('/api/stock-requests');
       let items = list.requests;
       setRequests(items);
-      if (initialId && !items.some(item => item.id === initialId)) {
-        const focused = await api(`/api/stock-requests?id=${encodeURIComponent(initialId)}`);
+      if (focusedId.current && !items.some(item => item.id === focusedId.current)) {
+        const focused = await api(`/api/stock-requests?id=${encodeURIComponent(focusedId.current)}`);
         items = [...focused.requests, ...items];
       }
       setRequests(items); setError('');
@@ -53,6 +55,7 @@ export default function StockRequestPanel({ renderAnalysis, onEnableNotification
     if (selected?.status === 'ready') analysisRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, [selected?.id, selected?.status]);
   const select = id => {
+    focusedId.current = id;
     setSelectedId(id);
     const url = new URL(window.location.href);
     if (id) url.searchParams.set('request', id); else url.searchParams.delete('request');
@@ -78,6 +81,17 @@ export default function StockRequestPanel({ renderAnalysis, onEnableNotification
     } catch (err) { setError(err.message === 'QUEUE_FULL' ? 'יש כבר 10 בקשות ממתינות. אפשר להוסיף לאחר השלמת סריקה.' : 'הבקשה לא נשמרה. נסה שוב.'); }
     finally { submitLock.current = false; setSaving(''); }
   };
+  const removeRequest = async item => {
+    if (submitLock.current) return;
+    submitLock.current = true; setDeleting(item.id); setError('');
+    try {
+      await api(`/api/stock-requests?id=${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+      setRequests(current => current.filter(request => request.id !== item.id));
+      if (focusedId.current === item.id) select('');
+      setNotice(`המחקר של ${item.symbol} נמחק.`);
+    } catch { setError('המחקר לא נמחק. נסה שוב.'); }
+    finally { submitLock.current = false; setDeleting(''); }
+  };
   const enablePush = async () => { await onEnableNotifications?.(); setPushEnabled(Boolean(await deviceEndpoint().catch(() => undefined)) && 'Notification' in window && Notification.permission === 'granted'); };
   return <section className="stock-requests" aria-labelledby="stock-request-title">
     <h2 id="stock-request-title">איזו מניה לבדוק בשבילך?</h2>
@@ -88,7 +102,7 @@ export default function StockRequestPanel({ renderAnalysis, onEnableNotification
     {error && <p className="stock-request-error" role="alert">{error} <button onClick={load}>רענון</button></p>}
     {onEnableNotifications ? <button className="stock-request-push" type="button" onClick={enablePush}><Bell size={15} />{pushEnabled ? 'התראות פעילות במכשיר · ניהול' : 'הפעל התראה כשהמחקר מוכן'}</button> : <a className="stock-request-push" href="/?view=research"><Bell size={15} />הפעלת התראות במסך המחקר</a>}
     {loading && <p role="status">טוען בקשות…</p>}
-    {requests.length > 0 && <details className="stock-request-list" open={selected?.status === 'pending' || undefined}><summary>המחקרים שביקשתי · {requests.filter(item => item.status === 'pending').length} ממתינים</summary>{requests.slice(0, 12).map(item => <button key={item.id} onClick={() => select(item.id)} aria-pressed={item.id === selectedId}><span dir="ltr">{item.symbol}</span><span>{item.status === 'ready' ? <><CheckCircle2 size={14} />הניתוח מוכן</> : <><Clock3 size={14} />{item.attempts ? 'ממתינה לסריקה חוזרת' : 'ממתינה לסריקה הקרובה'}</>}</span></button>)}</details>}
+    {requests.length > 0 && <details className="stock-request-list" open={selected?.status === 'pending' || undefined}><summary>המחקרים שביקשתי · {requests.filter(item => item.status === 'pending').length} ממתינים</summary>{requests.map(item => <div className="stock-request-row" key={item.id}><button className="stock-request-open" onClick={() => select(item.id)} aria-pressed={item.id === selectedId}><span dir="ltr">{item.symbol}</span><span>{item.status === 'ready' ? <><CheckCircle2 size={14} />הניתוח מוכן</> : <><Clock3 size={14} />{item.attempts ? 'ממתינה לסריקה חוזרת' : 'ממתינה לסריקה הקרובה'}</>}</span></button><button className="stock-request-delete" type="button" aria-label={`מחיקת המחקר של ${item.symbol}`} disabled={Boolean(deleting)} onClick={() => removeRequest(item)}><Trash2 size={17} /></button></div>)}</details>}
     {selected?.status === 'ready' && <div className="stock-request-analysis" ref={analysisRef}><div className="stock-request-analysis-title"><h3>המחקר שביקשת · <b dir="ltr">{selected.symbol}</b></h3><button onClick={() => select('')}>סגירה</button></div><p className="stock-request-completed">עודכן {new Date(selected.completedAt).toLocaleString('he-IL')} · הסריקה אינה מבצעת מסחר</p>{renderAnalysis(selected.result)}</div>}
   </section>;
 }
