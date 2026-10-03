@@ -17,12 +17,12 @@ export default defineConfig({
         theme_color: '#ffffff',
         icons: [
           {
-            src: 'new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
+            src: 'mutual-logo.svg',
             sizes: '192x192',
             type: 'image/svg+xml'
           },
           {
-            src: 'new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg',
+            src: 'mutual-logo.svg',
             sizes: '512x512',
             type: 'image/svg+xml'
           }

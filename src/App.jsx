@@ -149,7 +149,7 @@ function PinScreen({ onSuccess }) {
     <div className="pin-screen">
       <div className="pin-card fade-in">
         <div className="pin-logo">
-          <img src="/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg" alt="mutual" />
+          <img src="/mutual-logo.svg" alt="mutual" />
         </div>
         <h1 className="pin-title">חשבון משותף</h1>
         <p id="pin-instructions" className="pin-subtitle">הזינו קוד גישה בן 4 ספרות</p>
@@ -2253,7 +2253,7 @@ export default function App() {
       <a className="skip-link" href="#main-content">דלגו לתוכן הראשי</a>
       <header className="app-header">
         <div className="app-brand">
-          <img src="/new-logo-update.ff3b97310ec758844738483bf14e3cb1.svg" alt="mutual" />
+          <img src="/mutual-logo.svg" alt="mutual" />
           <div><strong>חשבון משותף</strong><span>כל התמונה הפיננסית, במקום אחד</span></div>
         </div>
         <div className="app-account">
