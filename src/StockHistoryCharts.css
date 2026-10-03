@@ -1,0 +1,13 @@
+.stock-history { margin-top: 18px; border-top: 1px solid #e8edf2; padding-top: 16px; text-align: right; min-width: 0; }
+.stock-history-heading { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; font-size: 13px; }
+.stock-history-heading span, .stock-history-note { color: #68778d; font-size: 11px; }
+.stock-history-select { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; margin: 14px 0; }
+.stock-history-select select { max-width: 65%; min-height: 40px; padding: 6px 10px; border: 1px solid #dce4ec; border-radius: 10px; background: white; color: #263549; font: inherit; }
+.stock-history-canvas { height: 195px; width: 100%; min-width: 0; }
+.stock-history-summary, .stock-history-message { font-size: 12px; line-height: 1.7; color: #41526a; }
+.stock-history-note { line-height: 1.65; margin-bottom: 0; }
+.stock-history-values { font-size: 11px; }
+.stock-history-values summary { cursor: pointer; padding: 8px 0; }
+.stock-history-values table { width: 100%; border-collapse: collapse; }
+.stock-history-values th, .stock-history-values td { padding: 6px; border-bottom: 1px solid #edf1f4; text-align: right; }
+.stock-history-message button { background: transparent; border: 0; color: #287b70; padding: 8px; cursor: pointer; font: inherit; }

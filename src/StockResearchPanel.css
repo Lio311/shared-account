@@ -38,3 +38,24 @@
 @keyframes research-spin { to { transform:rotate(360deg); } }
 @media(max-width:640px) { .research-results { grid-template-columns:1fr; gap:.75rem; } .research-heading h2 { font-size:1.55rem; } .research-action-card { padding:1.05rem; } }
 @media(prefers-reduced-motion:reduce) { .research-spinning { animation:none; } }
+
+/* Center each stock identity and each label/value pair independently. */
+.research-action-top { flex-direction:column; align-items:center; gap:.65rem; }
+.research-symbol { width:100%; text-align:center; align-items:center; }
+.research-symbol span { max-width:100%; white-space:normal; }
+.research-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.research-metrics span, .research-report-metrics span, .research-market-activity span { text-align:center; align-items:center; }
+.research-latest-report { background:#f7f9fc; border-radius:12px; padding:.75rem .4rem; margin-bottom:1rem; }
+.research-latest-report > p { font-size:.67rem; color:var(--text-muted); text-align:center; margin-bottom:.7rem; }
+.research-report-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+.research-report-metrics span, .research-market-activity span { display:flex; flex-direction:column; gap:.3rem; color:var(--text-muted); font-size:.67rem; }
+.research-report-metrics strong, .research-market-activity strong { color:var(--text-main); font-size:.95rem; font-weight:600; }
+.research-market-activity { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin:1rem 0 .25rem; padding:.75rem; border-radius:12px; background:#edf6f1; }
+.research-universe { display:grid; grid-template-columns:1fr 1fr; gap:.3rem; padding:.3rem; background:#e8edf4; border-radius:14px; margin:1.25rem 0 .5rem; }
+.research-universe button { border:none; background:transparent; color:var(--text-muted); min-height:42px; border-radius:11px; font:inherit; font-size:.8rem; cursor:pointer; }
+.research-universe button[aria-pressed="true"] { background:white; color:var(--text-main); box-shadow:0 2px 8px #1e293b08; font-weight:600; }
+.research-valuation { display:flex; justify-content:center; gap:2rem; margin:0 0 1rem; }
+.research-valuation span { display:flex; flex-direction:column; align-items:center; text-align:center; gap:.3rem; color:var(--text-muted); font-size:.68rem; }
+.research-valuation strong { color:var(--text-main); font-size:1rem; font-weight:600; }
+.research-history { border-top:1px solid var(--border-color); margin-bottom:.65rem; font-size:.75rem; line-height:1.7; }
+.research-history > summary { cursor:pointer; padding:.8rem 0; color:var(--accent); min-height:40px; }
