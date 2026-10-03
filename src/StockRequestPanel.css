@@ -36,8 +36,8 @@
 .stock-request-push svg, .stock-request-search button svg, .stock-request-list button svg { order:1; flex-shrink:0; }
 .stock-request-list summary { display:flex; align-items:center; justify-content:flex-start; gap:.35rem; list-style:none; text-align:right; }
 .stock-request-list summary::-webkit-details-marker { display:none; }
-.stock-request-list summary::after { content:'◀'; font-size:.6rem; }
-.stock-request-list[open] > summary::after { content:'▼'; }
+.stock-request-disclosure { color:#000; flex-shrink:0; }
+.stock-request-list[open] > summary .stock-request-disclosure { transform:rotate(-90deg); }
 .stock-requests .stock-request-push, .stock-requests .stock-request-push:hover, .stock-requests .stock-request-push:focus-visible { background:transparent; color:var(--accent); }
 .stock-requests .stock-request-list button:hover, .stock-requests .stock-request-matches button:hover { background:#eaf0f7; color:var(--text-main); }
 .stock-requests .stock-request-error button:hover, .stock-requests .stock-request-analysis-title button:hover { background:#edf3fa; color:var(--accent); }
