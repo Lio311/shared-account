@@ -1232,3 +1232,9 @@ input[type="checkbox"], input[type="radio"] { width: auto; min-height: auto; app
 .logout-button:hover { background: #e8edf5; color: var(--text-main); }
 .pin-status { margin-top: 1rem; color: var(--text-muted); font-size: 0.9rem; }
 @media (max-width: 480px) { .app-brand span { max-width: 130px; } .app-account { gap: 0; } }
+
+/* Owner-requested mobile gesture policy: scrolling stays available, zoom does not. */
+@media (max-width: 768px), (pointer: coarse) {
+  html, body, #root, #root-portal { touch-action: pan-x pan-y; }
+  input:not(.pin-input), select, textarea { font-size: 16px !important; }
+}

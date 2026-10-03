@@ -82,7 +82,7 @@ export default function StockRequestPanel({ renderAnalysis, onEnableNotification
   return <section className="stock-requests" aria-labelledby="stock-request-title">
     <h2 id="stock-request-title">איזו מניה לבדוק בשבילך?</h2>
     <p>בחר מניה למחקר בסריקה הקרובה. כשהניתוח מוכן, ההתראה פותחת אותו ישירות.</p>
-    <form className="stock-request-search" onSubmit={search}><input aria-label="שם חברה או סימול למחקר" placeholder="שם חברה או סימול, למשל AAPL" value={query} maxLength={80} onChange={event => { setQuery(event.target.value); searchAttempt.current++; setSearching(false); setMatches([]); }} /><button type="submit" disabled={searching || !query.trim()} aria-label="חיפוש מניה למחקר"><Search size={18} />{searching ? 'מחפש…' : 'חיפוש'}</button></form>
+    <form className="stock-request-search" onSubmit={search}><input aria-label="שם חברה או סימול למחקר" placeholder="שם חברה או סימול" value={query} maxLength={80} onChange={event => { setQuery(event.target.value); searchAttempt.current++; setSearching(false); setMatches([]); }} /><button type="submit" disabled={searching || !query.trim()} aria-label="חיפוש מניה למחקר"><Search size={18} />{searching ? 'מחפש…' : 'חיפוש'}</button></form>
     {matches.length > 0 && <div className="stock-request-matches">{matches.map(match => <button key={match.symbol} onClick={() => enqueue(match)} disabled={Boolean(saving)}><span><strong dir="ltr">{match.symbol}</strong><small dir="auto">{match.name}</small></span><span>{saving === match.symbol ? 'שומר…' : 'שלח למחקר'}</span></button>)}</div>}
     {notice && <p className="stock-request-notice" role="status">{notice}</p>}
     {error && <p className="stock-request-error" role="alert">{error} <button onClick={load}>רענון</button></p>}
