@@ -3,7 +3,7 @@ import YahooFinance from 'yahoo-finance2';
 import webpush from 'web-push';
 import { requireAuth, requireCron } from './_lib/auth.mjs';
 import { closeClient } from './_lib/validation.mjs';
-import { createResearchService } from '../lib/stock-research.mjs';
+import { createResearchService, recommend } from '../lib/stock-research.mjs';
 
 export const config = { maxDuration: 60 };
 const yahoo = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -46,7 +46,9 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const result = await client.query('SELECT report, notification_status FROM stock_research_reports ORDER BY created_at DESC LIMIT 1');
       if (!result.rows.length) return res.status(404).json({ error: 'NO_REPORT' });
-      return res.status(200).json({ ...result.rows[0].report, notificationStatus: result.rows[0].notification_status });
+      const report = result.rows[0].report;
+      const results = report.results.map(item => ({ ...item, recommendation: recommend({ symbol: item.symbol, shares: item.recommendation?.action === 'cover_review' ? -1 : 1 }, item.fundamentals, item.articles, item.instrumentName) }));
+      return res.status(200).json({ ...report, results, notificationStatus: result.rows[0].notification_status });
     }
     await client.query(`CREATE TABLE IF NOT EXISTS stock_research_reports (
       run_key TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), report JSONB NOT NULL, notification_status JSONB

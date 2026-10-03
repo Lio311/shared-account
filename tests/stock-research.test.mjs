@@ -19,13 +19,25 @@ test('approved leveraged instruments do not trigger automatic sell; missing data
   assert.equal(recommend({ symbol: 'AAPL', shares: 3 }, null, []).confidence, 'insufficient');
   assert.equal(recommend({ symbol: 'AAPL', shares: -3 }, null, []).action, 'cover_review');
 });
-test('buy review needs analyst coverage, profitable growth and multiple news domains', () => {
+test('buy review needs analyst coverage, profitable growth and multiple news publishers', () => {
   const financials = { analystCount: 10, analystConsensus: 'buy', operatingMargin: .2, revenueGrowth: .1 };
   const sources = [{ sourceDomain: 'one.test', title: 'a', url: 'https://one.test/a' }, { sourceDomain: 'two.test', title: 'b', url: 'https://two.test/b' }];
   const holding = { symbol: 'AAPL', shares: 3 };
   assert.equal(recommend(holding, financials, sources).action, 'buy_review');
   assert.equal(recommend(holding, financials, sources.slice(0, 1)).action, 'review');
   assert.equal(recommend(holding, { ...financials, operatingMargin: -.1 }, sources).action, 'review');
+});
+test('Yahoo-hosted stories retain distinct publishers without counting syndication as independent verification', () => {
+  const articles = normalizeArticles([
+    article({ publisher: 'Reuters', link: 'https://finance.yahoo.com/news/a' }),
+    article({ publisher: 'Bloomberg', link: 'https://finance.yahoo.com/news/b' }),
+  ], 'AAPL', now);
+  const financials = { analystCount: 10, analystConsensus: 'buy', operatingMargin: .2, revenueGrowth: .1 };
+  const decision = recommend({ symbol: 'AAPL', shares: 3 }, financials, articles);
+  assert.equal(decision.action, 'buy_review');
+  assert.equal(recommend({ symbol: 'AAPL', shares: 3 }, financials, articles.map(item => ({ ...item, source: 'Reuters' }))).action, 'review');
+  assert.ok(decision.limitations.some(item => item.includes('אימות עצמאי')));
+  assert.equal(recommend({ symbol: 'AAPL', shares: 3 }, { ...financials, analystConsensus: 'sell', revenueGrowth: -.1, operatingMargin: -.2 }, articles).action, 'sell_review');
 });
 test('scan accounts for every holding and preserves unsupported and failed coverage', async () => {
   const service = createResearchService({ now: () => now,
