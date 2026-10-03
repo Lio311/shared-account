@@ -59,3 +59,4 @@
 .research-valuation strong { color:var(--text-main); font-size:1rem; font-weight:600; }
 .research-history { border-top:1px solid var(--border-color); margin-bottom:.65rem; font-size:.75rem; line-height:1.7; }
 .research-history > summary { cursor:pointer; padding:.8rem 0; color:var(--accent); min-height:40px; }
+.research-eyebrow svg, .research-action-badge svg { order:1; }
