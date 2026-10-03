@@ -4,6 +4,7 @@ import webpush from 'web-push';
 import { requireAuth, requireCron } from './_lib/auth.mjs';
 import { closeClient } from './_lib/validation.mjs';
 import { createResearchService, recommend } from '../lib/stock-research.mjs';
+import { ensureRequestsTable, researchReady, requestUrl } from '../lib/stock-requests.mjs';
 
 export const config = { maxDuration: 60 };
 const yahoo = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -41,6 +42,27 @@ async function notify(client, runKey, deadline) {
   return { sent, failed, skipped, failureCodes, unavailable: false };
 }
 
+async function notifyRequests(client, deadline) {
+  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
+  if (!publicKey || !process.env.VAPID_PRIVATE_KEY) return;
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', publicKey, process.env.VAPID_PRIVATE_KEY);
+  await client.query('ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS person TEXT');
+  const ready = await client.query("SELECT id, person FROM stock_research_requests WHERE status = 'ready' AND (notification_status IS NULL OR COALESCE((notification_status->>'sent')::int, 0) = 0) ORDER BY completed_at LIMIT 10");
+  for (const request of ready.rows) {
+    if (Date.now() >= deadline - 6000) break;
+    const devices = await client.query('SELECT endpoint, keys FROM push_subscriptions WHERE person = $1', [request.person]);
+    let sent = 0, failed = 0;
+    await Promise.all(devices.rows.slice(0, 5).map(async device => {
+      if (Date.now() >= deadline - 2000) return;
+      try {
+        await webpush.sendNotification(device, JSON.stringify({ title: 'המחקר שביקשת מוכן', body: 'לחיצה תפתח ישירות את ניתוח המניה באתר.', tag: `stock-request-${request.id}`, url: requestUrl(request.id) }), { TTL: 24 * 3600, timeout: Math.min(3000, deadline - Date.now() - 1500) });
+        sent++;
+      } catch { failed++; }
+    }));
+    await client.query('UPDATE stock_research_requests SET notification_status = $1 WHERE id = $2', [JSON.stringify({ sent, failed, unavailable: devices.rows.length === 0 }), request.id]);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (!['GET', 'POST'].includes(req.method)) {
@@ -55,7 +77,7 @@ export default async function handler(req, res) {
     if (Date.now() >= deadline - 1000) return Promise.reject(new Error('RESEARCH_DEADLINE'));
     return rawQuery({ text, values, query_timeout: Math.min(5000, deadline - Date.now() - 1000) });
   };
-  let locked = false;
+  let locked = false, writing = false;
   try {
     await client.connect();
     if (req.method === 'GET') {
@@ -74,12 +96,25 @@ export default async function handler(req, res) {
     const lock = await client.query('SELECT pg_try_advisory_lock(92834173) AS acquired');
     locked = lock.rows[0].acquired;
     if (!locked) return res.status(409).json({ error: 'SCAN_ALREADY_RUNNING' });
-    const runKey = `v3-${Math.floor(Date.now() / (8 * 3600000))}`;
+    const runKey = `v4-${Math.floor(Date.now() / (8 * 3600000))}`;
     const previous = await client.query('SELECT run_key FROM stock_research_reports WHERE run_key = $1', [runKey]);
     if (previous.rows.length) return res.status(200).json({ success: true, skipped: true });
+    await ensureRequestsTable(client);
+    const pending = await client.query("SELECT id, symbol FROM stock_research_requests WHERE status = 'pending' ORDER BY last_attempt_at NULLS FIRST, created_at LIMIT 10");
     const holdings = await client.query("SELECT symbol, shares, status FROM portfolio_stocks WHERE status = 'active'");
-    const report = await scan(holdings.rows, { budgetMs: Math.max(1, deadline - Date.now() - 12000) });
+    const { requestedResults, ...report } = await scan(holdings.rows, { budgetMs: Math.max(1, deadline - Date.now() - 18000), requestedSymbols: pending.rows.map(row => row.symbol) });
+    await client.query('BEGIN'); writing = true;
     await client.query('INSERT INTO stock_research_reports (run_key, report) VALUES ($1, $2)', [runKey, JSON.stringify(report)]);
+    if (pending.rows.length) {
+      await client.query("UPDATE stock_research_requests SET last_attempt_at = NOW(), attempts = attempts + 1 WHERE id = ANY($1::uuid[]) AND status = 'pending'", [pending.rows.map(row => row.id)]);
+      const completed = pending.rows.flatMap(row => {
+        const result = requestedResults.find(item => item.symbol === row.symbol);
+        return researchReady(result) ? [{ id: row.id, result: { ...result, scannedAt: report.scannedAt } }] : [];
+      });
+      if (completed.length) await client.query("UPDATE stock_research_requests r SET status = 'ready', completed_at = NOW(), result = c.result FROM jsonb_to_recordset($1::jsonb) AS c(id uuid, result jsonb) WHERE r.id = c.id AND r.status = 'pending'", [JSON.stringify(completed)]);
+    }
+    await client.query('COMMIT'); writing = false;
+    await notifyRequests(client, deadline - 6000).catch(() => {});
     let notification;
     try { notification = await notify(client, runKey, deadline - 5000); }
     catch { notification = { sent: 0, failed: true }; }
@@ -87,6 +122,7 @@ export default async function handler(req, res) {
     if (Date.now() < deadline - 6000) await client.query("DELETE FROM stock_research_reports WHERE created_at < NOW() - INTERVAL '30 days'");
     return res.status(200).json({ success: true, coverage: report.results.length, incomplete: report.results.filter(item => item.status === 'error' || item.status === 'unsupported').length, notification });
   } catch (error) {
+    if (writing) await client.query('ROLLBACK').catch(() => {});
     if (req.method === 'GET' && error.code === '42P01') return res.status(404).json({ error: 'NO_REPORT' });
     console.error('Stock research failed', error.code || error.name);
     return res.status(503).json({ error: 'RESEARCH_UNAVAILABLE' });

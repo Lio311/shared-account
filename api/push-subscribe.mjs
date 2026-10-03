@@ -19,13 +19,14 @@ export default async function handler(req, res) {
   try {
     await client.connect();
     
-    // Upsert subscription based on endpoint
+    await client.query('ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS person TEXT');
+    // Bind each device to its authenticated identity.
     await client.query(`
-      INSERT INTO push_subscriptions (endpoint, keys)
-      VALUES ($1, $2)
+      INSERT INTO push_subscriptions (endpoint, keys, person)
+      VALUES ($1, $2, $3)
       ON CONFLICT (endpoint) DO UPDATE 
-      SET keys = EXCLUDED.keys, created_at = NOW();
-    `, [subscription.endpoint, subscription.keys]);
+      SET keys = EXCLUDED.keys, person = EXCLUDED.person, created_at = NOW();
+    `, [subscription.endpoint, subscription.keys, req.auth.person]);
     
     return res.status(200).json({ success: true });
   } catch (err) {

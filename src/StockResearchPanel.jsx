@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, ArrowUpRight, ArrowDownRight, ExternalLink, Sparkles } from 'lucide-react';
 import './StockResearchPanel.css';
+import StockRequestPanel from './StockRequestPanel';
 
 const StockHistoryCharts = lazy(() => import('./StockHistoryCharts'));
 
@@ -14,15 +15,16 @@ const reportDate = value => value ? new Intl.DateTimeFormat('he-IL', { dateStyle
 const money = (value, currency, compact = true) => Number.isFinite(value) && currency
   ? new Intl.NumberFormat('he-IL', { style: 'currency', currency, notation: compact ? 'compact' : 'standard', maximumFractionDigits: 2 }).format(value) : '—';
 
-function ResearchActionCard({ item, opportunity = false }) {
+function ResearchActionCard({ item, opportunity = false, requested = false }) {
   const [chartsOpen, setChartsOpen] = useState(false);
+  const reviewing = item.recommendation.action === 'review';
   const selling = item.recommendation.action === 'sell_review';
   const covering = item.recommendation.action === 'cover_review';
   const data = item.fundamentals;
   const latest = item.latestReport;
   const activity = item.marketActivity;
   const valuation = item.valuation;
-  const reason = covering ? 'נרשמה יתרה שלילית. בדוק סגירת השורט בהתאם למדיניות שלך.' : selling ? `קונצנזוס מכירה של ${data.analystCount} אנליסטים, לצד ירידה בהכנסות ורווחיות שלילית.` : `קונצנזוס קנייה של ${data.analystCount} אנליסטים, לצד צמיחת הכנסות ורווחיות חיובית.`;
+  const reason = reviewing ? 'לא זוהה כרגע אות קנייה או מכירה לפי כללי הסינון.' : covering ? 'נרשמה יתרה שלילית. בדוק סגירת השורט בהתאם למדיניות שלך.' : selling ? `קונצנזוס מכירה של ${data.analystCount} אנליסטים, לצד ירידה בהכנסות ורווחיות שלילית.` : `קונצנזוס קנייה של ${data.analystCount} אנליסטים, לצד צמיחת הכנסות ורווחיות חיובית.`;
   const publisherSources = [...new Map(item.articles.map(article => [article.source, article])).values()].slice(0, 2);
   const metrics = latest ? [
     ['הכנסות', money(latest.revenue, latest.currency)],
@@ -30,10 +32,10 @@ function ResearchActionCard({ item, opportunity = false }) {
     ['רווח תפעולי', money(latest.operatingIncome, latest.currency)],
     ...(Number.isFinite(latest.dilutedEPS) ? [['רווח מדולל למניה', money(latest.dilutedEPS, latest.currency, false)]] : []),
   ] : [];
-  return <article className={`research-action-card ${selling ? 'sell' : 'buy'}`}>
+  return <article className={`research-action-card ${selling ? 'sell' : reviewing ? 'review' : 'buy'}`}>
     <div className="research-action-top">
       <div className="research-symbol"><strong dir="ltr">{item.symbol}</strong>{item.instrumentName && <span dir="auto">{item.instrumentName}</span>}</div>
-      <span className={`research-action-badge ${selling ? 'sell' : 'buy'}`}>{selling ? <ArrowDownRight size={16} /> : <ArrowUpRight size={16} />}{selling ? 'מכירה / צמצום' : covering ? 'קנייה לסגירת שורט' : opportunity ? 'קנייה / חדשה לתיק' : 'קנייה / הגדלה'}</span>
+      <span className={`research-action-badge ${selling ? 'sell' : 'buy'}`}>{selling ? <ArrowDownRight size={16} /> : <ArrowUpRight size={16} />}{reviewing && requested ? 'ניתוח המניה' : selling ? 'מכירה / צמצום' : covering ? 'קנייה לסגירת שורט' : opportunity ? 'קנייה / חדשה לתיק' : 'קנייה / הגדלה'}</span>
     </div>
     {opportunity && activity && <div className="research-market-activity"><span>שינוי ביום המסחר<strong dir="ltr">{activity.changePercent > 0 ? '+' : ''}{activity.changePercent.toFixed(2)}%</strong></span>{Number.isFinite(activity.relativeVolume) && <span>מחזור ביחס לממוצע<strong dir="ltr">{activity.relativeVolume.toFixed(2)}×</strong></span>}</div>}
     <p className="research-reason">{reason}</p>
@@ -55,7 +57,7 @@ function ResearchActionCard({ item, opportunity = false }) {
   </article>;
 }
 
-export default function StockResearchPanel({ stocks = null }) {
+export default function StockResearchPanel({ stocks = null, onEnableNotifications }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -112,6 +114,7 @@ export default function StockResearchPanel({ stocks = null }) {
 
   return (
     <section className="stock-research" aria-labelledby="research-title" aria-busy={loading}>
+      <StockRequestPanel onEnableNotifications={onEnableNotifications} renderAnalysis={item => <ResearchActionCard item={item} requested />} />
       <div className="research-heading">
         <div><span className="research-eyebrow"><Sparkles size={14} aria-hidden="true" />התיק שלך, במבט קדימה</span><h2 id="research-title">{universe === 'new' ? 'חמות מחוץ לתיק' : 'מה כדאי לשנות'}</h2></div>
         <button type="button" className="research-refresh" aria-label="רענון ההמלצות" onClick={loadReport} disabled={loading}><RefreshCw size={18} className={loading ? 'research-spinning' : ''} aria-hidden="true" /></button>

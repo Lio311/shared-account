@@ -1,3 +1,7 @@
+function safeResearchUrl(value) {
+  return typeof value === 'string' && /^\/\?view=research(?:&request=[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$/i.test(value) ? value : '/';
+}
+
 self.addEventListener('push', function(event) {
   let data = {};
   if (event.data) {
@@ -17,7 +21,7 @@ self.addEventListener('push', function(event) {
     data: {
       dateOfArrival: Date.now(),
       primaryKey: '1',
-      url: data.url === '/?view=research' ? data.url : '/'
+      url: safeResearchUrl(data.url)
     }
   };
 
@@ -29,6 +33,6 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   event.waitUntil(
-    clients.openWindow(event.notification.data?.url === '/?view=research' ? '/?view=research' : '/')
+    clients.openWindow(safeResearchUrl(event.notification.data?.url))
   );
 });

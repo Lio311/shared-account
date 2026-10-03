@@ -2286,7 +2286,7 @@ export default function App() {
             {activeTab === 'charts' && renderCharts()}
             {activeTab === 'projects' && renderProjects()}
             {activeTab === 'investments' && renderInvestments()}
-            {activeTab === 'research' && <StockResearchPanel />}
+            {activeTab === 'research' && <StockResearchPanel onEnableNotifications={handleSubscribePush} />}
             {activeTab === 'payslips' && renderPayslips()}
             {activeTab === 'audit' && renderAuditLogs()}
             {activeTab === 'portfolio' && (

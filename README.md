@@ -30,6 +30,14 @@ Each action card centers the ticker/company and its metrics, shows available lat
 
 The GitHub workflow runs at 00:17, 08:17 and 16:17 UTC with `CRON_SECRET` in repository secrets. It reports failure without logging financial payloads. Scheduling can be delayed or disabled after prolonged public-repository inactivity. Standard public-repository runners use the free tier. Mobile push uses existing browser subscriptions and requires device permission; lock-screen research notifications contain no financial details.
 
+## Requested stock research
+
+Authenticated users can search a company name or ticker, select a provider-confirmed equity/ETF, and queue research for the next scheduled scan. `GET /api/stock-requests?q=...` resolves matches; POST accepts a confirmed symbol. Each identity has up to ten pending requests; a transaction/person lock and partial unique index prevent duplicate pending requests and concurrent limit races. Reads and direct UUID links are scoped to the authenticated identity.
+
+The existing scan prioritizes up to ten queued symbols, deduplicates overlaps with holdings, and keeps private requested results out of the shared report. Completion requires successful source coverage, fundamentals and a quarterly report; incomplete sources stay queued for a retry. Report storage and request completion commit together before notifications. Personal results persist separately in stock_research_requests. The UI polls while visible and shows pending/ready states, with the existing seven annual charts and valuation context.
+
+Device subscriptions are assigned to the identity registering them. A queued request can bind its current browser's existing legacy subscription if unassigned, and never overwrites another identity's ownership. Completion pushes target only that identity's subscriptions and use a safe `/?view=research&request=<UUID>` direct link; notification text does not reveal a stock name or personal position. Unassigned legacy devices need registration or a request from that device. Failed/unavailable push attempts retain the ready analysis and retry in a later scan. Receiving mobile push requires permission and a supported browser; on iPhone open the installed home-screen app. Provider gaps can delay research beyond a single eight-hour cycle.
+
 ## Monthly accounting
 
 The previous code used a monthly rate of 0.005 and a 15 ILS fee. The owner confirmed the fee, but not the interest rate. Automatic accounting therefore stays disabled until the actual broker terms are confirmed and `MONTHLY_ACCOUNTING_ENABLED=true` plus explicit rate/fee values are configured. The historical number in the code is not evidence of a contractual rate.
